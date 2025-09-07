@@ -68,7 +68,7 @@ def start_training(model_type, csv_path, training_id=None, model_name=None, trai
             training_id = f"training_{int(time.time())}"
         
         # Validate model type
-        valid_models = ['transformer', 'nn', 'xgboost']
+        valid_models = ['transformer', 'nn', 'xgboost', 'ppo']
         if model_type not in valid_models:
             return {'error': f'Invalid model type. Must be one of: {valid_models}'}
         

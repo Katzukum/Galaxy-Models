@@ -11,6 +11,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from NetworkConfigs.NN_loader import NNModelLoader, NNPredictionResponse
 from NetworkConfigs.Transformer_loader import TransformerModelLoader, TransformerPredictionResponse
 from NetworkConfigs.XGBoost_loader import XGBoostModelLoader, XGBoostPredictionResponse
+from NetworkConfigs.PPO_loader import PPOModelLoader, PPOPredictionResponse
 
 
 
@@ -92,6 +93,9 @@ def get_model_loader(model_dir):
 
     elif model_type in ['xgboost', 'xgboostclassifier']:
         return XGBoostModelLoader(model_dir=model_dir)
+    elif model_type in ['ppo', 'ppo agent']:
+        print(f"[DEBUG] Creating PPOModelLoader")
+        return PPOModelLoader(model_dir=model_dir)
     else:
         # Default to NN loader
         print(f"[DEBUG] Unknown model type, defaulting to NNModelLoader")
@@ -186,7 +190,7 @@ async def get_model_info():
             detail=f"Error retrieving model information: {str(e)}"
         )
 
-@app.post("/predict", response_model=Union[NNPredictionResponse, TransformerPredictionResponse, XGBoostPredictionResponse])
+@app.post("/predict", response_model=Union[NNPredictionResponse, TransformerPredictionResponse, XGBoostPredictionResponse, PPOPredictionResponse])
 async def get_prediction(request: PredictionRequest):
     """
     Accepts a dictionary of features and returns a model prediction.
@@ -211,6 +215,9 @@ async def get_prediction(request: PredictionRequest):
         elif isinstance(model_loader, NNModelLoader):
             prediction = model_loader.predict(request.features)
             return model_loader.create_prediction_response(prediction)
+        elif isinstance(model_loader, PPOModelLoader):
+            prediction_data = model_loader.predict(request.features)
+            return model_loader.create_prediction_response(prediction_data)
         else:
             # Fallback for unknown model types
             raise HTTPException(status_code=500, detail="Unknown model type")

@@ -12,6 +12,9 @@ from sklearn.preprocessing import MinMaxScaler, StandardScaler
 # --- Re-defining Model Architectures ---
 # ####################################################################
 
+# Import PPO network for backtesting
+from NetworkConfigs.PPOTrainer import PPONetwork
+
 class TimeSeriesTransformer(nn.Module):
     def __init__(self, input_dim: int, d_model: int, nhead: int,
                  num_encoder_layers: int, dim_feedforward: int, dropout: float = 0.1):
@@ -97,6 +100,15 @@ class Backtester:
         elif self.model_type == 'Neural Network (Regression)':
             self.model = build_nn_from_config(original_config['architecture'])
             self.model.load_state_dict(torch.load(model_path, map_location=self.device))
+        elif self.model_type == 'PPO Agent':
+            # Load PPO model
+            model_params = original_config['model_params']
+            self.model = PPONetwork(
+                input_dim=model_params['input_dim'] + 3,  # +3 for account state
+                hidden_dim=model_params['hidden_dim'],
+                num_actions=model_params['num_actions']
+            )
+            self.model.load_state_dict(torch.load(model_path, map_location=self.device))
         else:
             raise ValueError(f"Unsupported model type: {self.model_type}")
         
@@ -172,6 +184,10 @@ class Backtester:
             
             # Prepare input data for prediction (needed for both position checking and new signals)
             if self.model_type == 'Time-Series Transformer':
+                input_data = features_df.iloc[i-seq_length:i].values
+                scaled_input = self.scaler.transform(input_data)
+            elif self.model_type == 'PPO Agent':
+                # PPO needs sequence data
                 input_data = features_df.iloc[i-seq_length:i].values
                 scaled_input = self.scaler.transform(input_data)
             else:  # XGBoost and NN

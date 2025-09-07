@@ -14,6 +14,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from NetworkConfigs.TransformerTrainer import run_training_pipeline as run_transformer_pipeline
 from NetworkConfigs.NNTrainer import run_training_pipeline as run_nn_pipeline, NNTrainer
 from NetworkConfigs.XGboostTrainer import run_training_pipeline as run_xgb_pipeline, XGBoostTrainer
+from NetworkConfigs.PPOTrainer import run_training_pipeline as run_ppo_pipeline, PPOTrainer
 
 
 def main():
@@ -36,11 +37,12 @@ def main():
         "--model",
         type=str,
         required=True,
-        choices=['transformer', 'nn', 'xgboost'],
+        choices=['transformer', 'nn', 'xgboost', 'ppo'],
         help="The type of model to train.\n"
              "  - 'transformer': Time-series forecasting model.\n"
              "  - 'nn': Neural network for price-change regression.\n"
-             "  - 'xgboost': XGBoost for 5-class action classification."
+             "  - 'xgboost': XGBoost for 5-class action classification.\n"
+             "  - 'ppo': PPO reinforcement learning agent for trading."
     )
     
     parser.add_argument(
@@ -279,6 +281,71 @@ def main():
         run_xgb_pipeline(
             model_name=MODEL_NAME, output_dir=OUTPUT_DIR,
             training_config=config, X=X_sample, y=y_sample
+        )
+
+    elif args.model == 'ppo':
+        # --- D. Configure and run the PPO pipeline ---
+        print("\nConfiguring PPO (Reinforcement Learning) training pipeline...")
+        
+        # Validate data before processing
+        if 'close' not in data.columns.str.lower():
+            print("Error: 'close' column not found in the CSV file. Required for PPO training.")
+            return
+        
+        # Prepare features for PPO (exclude non-numeric columns)
+        numeric_cols = data.select_dtypes(include=[np.number]).columns.tolist()
+        feature_cols = [col for col in numeric_cols if col not in ['date', 'time', 'target']]
+        
+        if not feature_cols:
+            print("Error: No numeric features found for PPO training.")
+            return
+        
+        # Prepare data
+        model_data = data[feature_cols].values
+        
+        # Check for any NaN or infinite values
+        if np.any(np.isnan(model_data)) or np.any(np.isinf(model_data)):
+            print("Warning: Found NaN or infinite values in data. Cleaning...")
+            model_data = np.nan_to_num(model_data, nan=0.0, posinf=0.0, neginf=0.0)
+        
+        print(f"Data shape: {model_data.shape}, Features: {len(feature_cols)}")
+        
+        # Use custom parameters if provided, otherwise use defaults
+        if training_params and 'model_params' in training_params:
+            model_params = training_params['model_params'].copy()
+            model_params['input_dim'] = len(feature_cols)
+        else:
+            model_params = {
+                'input_dim': len(feature_cols),
+                'hidden_dim': 128,
+                'num_actions': 3,
+                'lookback_window': 60
+            }
+        
+        if training_params and 'train_params' in training_params:
+            train_params = training_params['train_params']
+        else:
+            train_params = {
+                'learning_rate': 3e-4,
+                'epochs': 100,
+                'batch_size': 64,
+                'ppo_epochs': 4,
+                'clip_ratio': 0.2,
+                'value_coef': 0.5,
+                'entropy_coef': 0.01
+            }
+        
+        config = {
+            'model_params': model_params,
+            'train_params': train_params
+        }
+        
+        MODEL_NAME = args.model_name if args.model_name else "nq_ppo_trading_agent_cli"
+        OUTPUT_DIR = f"./Models/PPO_{MODEL_NAME}"
+        
+        run_ppo_pipeline(
+            model_name=MODEL_NAME, output_dir=OUTPUT_DIR,
+            training_config=config, data=model_data, features=feature_cols
         )
 
 if __name__ == '__main__':
