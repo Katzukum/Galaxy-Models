@@ -191,15 +191,25 @@ def run_training_process(training_id, model_type, csv_path, model_name, training
         if DEBUG_TRAINING:
             # Debug mode: Open command window to show training output
             debug_print("Opening command window for training process")
-            process = subprocess.Popen(
-                cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                universal_newlines=True,
-                bufsize=1,
-                cwd=project_root,
-                creationflags=subprocess.CREATE_NEW_CONSOLE if os.name == 'nt' else 0
-            )
+            if os.name == 'nt':
+                # Windows: Use CREATE_NEW_CONSOLE and don't capture output
+                process = subprocess.Popen(
+                    cmd,
+                    cwd=project_root,
+                    creationflags=subprocess.CREATE_NEW_CONSOLE
+                )
+            else:
+                # Linux/macOS: Use xterm or gnome-terminal if available
+                try:
+                    # Try to open in a new terminal window
+                    terminal_cmd = ['gnome-terminal', '--', 'bash', '-c', f"cd {project_root} && {' '.join(cmd)}; read -p 'Press Enter to close...'"]
+                    process = subprocess.Popen(terminal_cmd)
+                except:
+                    # Fallback: just run normally but don't capture output
+                    process = subprocess.Popen(
+                        cmd,
+                        cwd=project_root
+                    )
         else:
             # Normal mode: Capture output for web interface
             debug_print("Running training in background mode")
@@ -218,28 +228,33 @@ def run_training_process(training_id, model_type, csv_path, model_name, training
         if DEBUG_TRAINING:
             debug_print("Command window opened - check for new console window")
             debug_print("Training output will be visible in the command window")
+            debug_print("Note: Output is not captured in debug mode - check the command window")
         
-        # Read output line by line
-        for line in iter(process.stdout.readline, ''):
-            if line:
-                training_logs[training_id].append({
-                    'timestamp': datetime.now().isoformat(),
-                    'message': line.strip()
-                })
-                
-                # Update progress based on keywords in output
-                if 'epoch' in line.lower() and 'loss' in line.lower():
-                    # Extract epoch number for progress calculation
-                    try:
-                        epoch_part = line.split('epoch')[1].split('/')[0].strip()
-                        if epoch_part.isdigit():
-                            epoch = int(epoch_part)
-                            # Assume 25 epochs for transformer, 100 for nn, 150 for xgboost
-                            max_epochs = 25 if model_type == 'transformer' else (100 if model_type == 'nn' else 150)
-                            progress = min(90, (epoch / max_epochs) * 90)  # Cap at 90% until completion
-                            training_status[training_id]['progress'] = progress
-                    except:
-                        pass
+        if DEBUG_TRAINING:
+            # In debug mode, don't read output - just wait for process to complete
+            debug_print("Waiting for training process to complete...")
+        else:
+            # Read output line by line only in normal mode
+            for line in iter(process.stdout.readline, ''):
+                if line:
+                    training_logs[training_id].append({
+                        'timestamp': datetime.now().isoformat(),
+                        'message': line.strip()
+                    })
+                    
+                    # Update progress based on keywords in output
+                    if 'epoch' in line.lower() and 'loss' in line.lower():
+                        # Extract epoch number for progress calculation
+                        try:
+                            epoch_part = line.split('epoch')[1].split('/')[0].strip()
+                            if epoch_part.isdigit():
+                                epoch = int(epoch_part)
+                                # Assume 25 epochs for transformer, 100 for nn, 150 for xgboost
+                                max_epochs = 25 if model_type == 'transformer' else (100 if model_type == 'nn' else 150)
+                                progress = min(90, (epoch / max_epochs) * 90)  # Cap at 90% until completion
+                                training_status[training_id]['progress'] = progress
+                        except:
+                            pass
         
         # Wait for process to complete
         return_code = process.wait()
@@ -537,16 +552,27 @@ def start_api_server(config):
         if DEBUG_API:
             # Debug mode: Open command window to show API server output
             debug_print(f"Opening command window for API server: {' '.join(cmd)}")
-            api_process = subprocess.Popen(
-                cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                universal_newlines=True,
-                bufsize=1,
-                cwd=project_root,
-                env=env,
-                creationflags=subprocess.CREATE_NEW_CONSOLE if os.name == 'nt' else 0
-            )
+            if os.name == 'nt':
+                # Windows: Use CREATE_NEW_CONSOLE and don't capture output
+                api_process = subprocess.Popen(
+                    cmd,
+                    cwd=project_root,
+                    env=env,
+                    creationflags=subprocess.CREATE_NEW_CONSOLE
+                )
+            else:
+                # Linux/macOS: Use xterm or gnome-terminal if available
+                try:
+                    # Try to open in a new terminal window
+                    terminal_cmd = ['gnome-terminal', '--', 'bash', '-c', f"cd {project_root} && {' '.join(cmd)}; read -p 'Press Enter to close...'"]
+                    api_process = subprocess.Popen(terminal_cmd)
+                except:
+                    # Fallback: just run normally but don't capture output
+                    api_process = subprocess.Popen(
+                        cmd,
+                        cwd=project_root,
+                        env=env
+                    )
         else:
             # Normal mode: Capture output for web interface
             debug_print("Running API server in background mode")
@@ -566,22 +592,27 @@ def start_api_server(config):
         if DEBUG_API:
             debug_print("Command window opened for API server - check for new console window")
             debug_print("API server output will be visible in the command window")
+            debug_print("Note: Output is not captured in debug mode - check the command window")
         
-        # Start a thread to read the output
-        def read_output():
-            try:
-                for line in iter(api_process.stdout.readline, ''):
-                    if line:
-                        api_logs.append(f"[{datetime.now().strftime('%H:%M:%S')}] {line.strip()}")
-                        # Keep only last 100 log entries
-                        if len(api_logs) > 100:
-                            api_logs.pop(0)
-            except Exception as e:
-                api_logs.append(f"[{datetime.now().strftime('%H:%M:%S')}] Error reading output: {str(e)}")
-        
-        output_thread = threading.Thread(target=read_output)
-        output_thread.daemon = True
-        output_thread.start()
+        if DEBUG_API:
+            # In debug mode, don't read output - just start the process
+            debug_print("API server running in debug mode - output visible in command window")
+        else:
+            # Start a thread to read the output only in normal mode
+            def read_output():
+                try:
+                    for line in iter(api_process.stdout.readline, ''):
+                        if line:
+                            api_logs.append(f"[{datetime.now().strftime('%H:%M:%S')}] {line.strip()}")
+                            # Keep only last 100 log entries
+                            if len(api_logs) > 100:
+                                api_logs.pop(0)
+                except Exception as e:
+                    api_logs.append(f"[{datetime.now().strftime('%H:%M:%S')}] Error reading output: {str(e)}")
+            
+            output_thread = threading.Thread(target=read_output)
+            output_thread.daemon = True
+            output_thread.start()
         
         # Give the process a moment to start and check if it's still running
         import time
