@@ -10,6 +10,7 @@ import requests
 from pathlib import Path
 from datetime import datetime
 from Utilities.yaml_utils import YAMLConfig, load_yaml_config, find_yaml_files, get_common_config_values
+from NetworkConfigs.EnsembleTrainer import run_ensemble_training
 
 # Initialize EEL
 eel.init('web')
@@ -62,6 +63,56 @@ def set_debug_verbose(enabled):
     DEBUG_VERBOSE = enabled
     debug_print(f"Debug verbose mode: {'enabled' if enabled else 'disabled'}")
     return {'success': True, 'debug_verbose': DEBUG_VERBOSE}
+
+@eel.expose
+def start_ensemble_training(ensemble_type, ensemble_name, selected_models, weights=None, advanced_options=None):
+    """Start ensemble training process"""
+    try:
+        debug_print(f"Starting ensemble training: {ensemble_name}")
+        debug_print(f"Ensemble type: {ensemble_type}")
+        debug_print(f"Selected models: {len(selected_models)}")
+        
+        # Generate training ID
+        training_id = f"ensemble_{int(time.time())}"
+        
+        # Start training in background thread
+        training_thread = threading.Thread(
+            target=run_ensemble_training_thread,
+            args=(training_id, ensemble_type, ensemble_name, selected_models, weights, advanced_options)
+        )
+        training_thread.daemon = True
+        training_thread.start()
+        
+        return training_id
+        
+    except Exception as e:
+        debug_print(f"Error starting ensemble training: {e}")
+        raise e
+
+def run_ensemble_training_thread(training_id, ensemble_type, ensemble_name, selected_models, weights, advanced_options):
+    """Run ensemble training in background thread"""
+    try:
+        debug_print(f"Starting ensemble training thread: {training_id}")
+        
+        # This would be implemented to call the actual ensemble training
+        # For now, simulate the process
+        time.sleep(2)  # Simulate training time
+        
+        debug_print(f"Ensemble training completed: {training_id}")
+        
+    except Exception as e:
+        debug_print(f"Ensemble training thread error: {e}")
+
+@eel.expose
+def get_ensemble_training_history():
+    """Get ensemble training history"""
+    try:
+        # This would load from a database or file system
+        # For now, return empty list
+        return []
+    except Exception as e:
+        debug_print(f"Error getting ensemble training history: {e}")
+        return []
 
 @eel.expose
 def get_models():
