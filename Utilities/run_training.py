@@ -313,10 +313,10 @@ def main():
         # Use custom parameters if provided, otherwise use defaults
         if training_params and 'model_params' in training_params:
             model_params = training_params['model_params'].copy()
-            model_params['input_dim'] = len(feature_cols)
+            model_params['input_dim'] = len(feature_cols)  # PPO trainer will add +3 for account state
         else:
             model_params = {
-                'input_dim': len(feature_cols),
+                'input_dim': len(feature_cols),  # PPO trainer will add +3 for account state
                 'hidden_dim': 128,
                 'num_actions': 3,
                 'lookback_window': 60

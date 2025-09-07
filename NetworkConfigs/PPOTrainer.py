@@ -250,7 +250,7 @@ class PPOTrainer:
         
         # Get model parameters
         model_params = config.get('model_params', {})
-        self.input_dim = model_params.get('input_dim', 10)
+        self.input_dim = model_params.get('input_dim', 10) + 3  # +3 for account state
         self.hidden_dim = model_params.get('hidden_dim', 128)
         self.num_actions = model_params.get('num_actions', 3)
         self.lookback_window = model_params.get('lookback_window', 60)
@@ -278,7 +278,7 @@ class PPOTrainer:
         """Prepare data for training"""
         print("Preparing data for PPO training...")
         
-        # Scale the data
+        # Scale the data (only the market features, not account state)
         scaled_data = self.scaler.fit_transform(data)
         
         # Create environment
