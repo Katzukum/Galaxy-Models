@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Galaxy Models Dashboard</title>
+    
+    <!-- Main CSS -->
+    <link rel="stylesheet" href="css/main.css">
+    
+    <!-- Tab-specific CSS -->
+    <link rel="stylesheet" href="tabs/model-library/model-library.css">
+    <link rel="stylesheet" href="tabs/training/training.css">
+    <link rel="stylesheet" href="tabs/backtesting/backtesting.css">
+    <link rel="stylesheet" href="tabs/api-hosting/api-hosting.css">
+    
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <h1>🚀 Galaxy Models Dashboard</h1>
+            <p>Discover and explore your machine learning models</p>
+        </div>
+
+        <!-- Tab Navigation -->
+        <div class="tab-navigation">
+            <button class="tab-button active" data-tab="model-library">
+                📚 Model Library
+            </button>
+            <button class="tab-button" data-tab="training">
+                🚀 Training
+            </button>
+            <button class="tab-button" data-tab="backtesting">
+                📊 Backtesting
+            </button>
+            <button class="tab-button" data-tab="api-hosting">
+                🌐 API Hosting
+            </button>
+        </div>
+
+        <!-- Tab Content -->
+        <div id="tab-content-container">
+            <!-- Model Library Tab -->
+            <div class="tab-content active" id="model-library-content">
+                <div class="stats" id="model-library-stats">
+                    <h3>Loading Models...</h3>
+                    <p>Scanning the Models folder for YAML configurations</p>
+                </div>
+
+                <button class="refresh-btn" onclick="ModelLibrary.loadModels()">🔄 Refresh Models</button>
+
+                <div id="models-container">
+                    <div class="loading">Loading models...</div>
+                </div>
+            </div>
+
+            <!-- Training Tab -->
+            <div class="tab-content" id="training-content">
+                <div class="training-container">
+                    <!-- Training Header -->
+                    <div class="training-header">
+                        <h2>🚀 Model Training</h2>
+                        <p>Train new machine learning models with your data</p>
+                    </div>
+
+                    <!-- Training Form -->
+                    <div class="card training-form-card">
+                        <h3>📋 Training Configuration</h3>
+                        
+                        <form id="training-form" class="training-form">
+                            <!-- Model Type Selection -->
+                            <div class="form-group">
+                                <label for="model-type">Model Type</label>
+                                <select id="model-type" name="model-type" required>
+                                    <option value="">Select a model type...</option>
+                                    <option value="transformer">🔄 Transformer (Time-series Forecasting)</option>
+                                    <option value="nn">🧠 Neural Network (Price Change Regression)</option>
+                                    <option value="xgboost">🌳 XGBoost (Action Classification)</option>
+                                </select>
+                                <div class="form-help">
+                                    <span class="help-text" data-model="transformer" style="display: none;">
+                                        Time-series forecasting model for predicting future values
+                                    </span>
+                                    <span class="help-text" data-model="nn" style="display: none;">
+                                        Neural network for predicting price changes with regression
+                                    </span>
+                                    <span class="help-text" data-model="xgboost" style="display: none;">
+                                        XGBoost classifier for 5-class action classification
+                                    </span>
+                                </div>
+                            </div>
+
+                            <!-- CSV File Selection -->
+                            <div class="form-group">
+                                <label for="csv-file">Training Data</label>
+                                <div class="file-input-container">
+                                    <input type="file" id="csv-file" name="csv-file" accept=".csv" required>
+                                    <div class="file-input-display">
+                                        <span class="file-input-text">Choose CSV file or drag & drop</span>
+                                        <span class="file-input-icon">📁</span>
+                                    </div>
+                                </div>
+                                <div class="form-help">
+                                    Select a CSV file containing your training data. You can either upload a new file or select from the available files list below. The file should have appropriate columns for the selected model type.
+                                </div>
+                            </div>
+
+                            <!-- Available CSV Files -->
+                            <div class="form-group">
+                                <label>Available CSV Files</label>
+                                <div class="form-help">
+                                    Click on any file below to select it for training, or upload a new file above.
+                                </div>
+                                <div id="available-csv-files" class="csv-files-list">
+                                    <div class="loading">Loading available CSV files...</div>
+                                </div>
+                            </div>
+
+                            <!-- Model Name Override -->
+                            <div class="form-group">
+                                <label for="model-name">Model Name (Optional)</label>
+                                <input type="text" id="model-name" name="model-name" placeholder="Leave empty for auto-generated name">
+                                <div class="form-help">
+                                    Specify a custom name for your model. If left empty, a name will be auto-generated based on the model type and timestamp.
+                                </div>
+                            </div>
+
+                            <!-- Training Parameters -->
+                            <div class="form-group">
+                                <div class="params-header">
+                                    <label>Training Parameters</label>
+                                    <button type="button" id="reset-params-btn" class="btn btn-small">🔄 Reset to Defaults</button>
+                                </div>
+                                <div class="training-params-container">
+                                    <!-- Transformer Parameters -->
+                                    <div id="transformer-params" class="model-params" style="display: none;">
+                                        <h4>🔄 Transformer Parameters</h4>
+                                        <div class="params-grid">
+                                            <div class="param-group">
+                                                <label for="transformer-d-model">Internal Dimension (d_model)</label>
+                                                <input type="number" id="transformer-d-model" value="64" min="32" max="512">
+                                            </div>
+                                            <div class="param-group">
+                                                <label for="transformer-nhead">Attention Heads (nhead)</label>
+                                                <input type="number" id="transformer-nhead" value="4" min="1" max="16">
+                                            </div>
+                                            <div class="param-group">
+                                                <label for="transformer-layers">Encoder Layers</label>
+                                                <input type="number" id="transformer-layers" value="3" min="1" max="12">
+                                            </div>
+                                            <div class="param-group">
+                                                <label for="transformer-feedforward">Feedforward Dimension</label>
+                                                <input type="number" id="transformer-feedforward" value="128" min="64" max="1024">
+                                            </div>
+                                            <div class="param-group">
+                                                <label for="transformer-dropout">Dropout Rate</label>
+                                                <input type="number" id="transformer-dropout" value="0.1" min="0" max="0.5" step="0.05">
+                                            </div>
+                                            <div class="param-group">
+                                                <label for="transformer-sequence-length">Sequence Length</label>
+                                                <input type="number" id="transformer-sequence-length" value="60" min="10" max="200">
+                                            </div>
+                                            <div class="param-group">
+                                                <label for="transformer-learning-rate">Learning Rate</label>
+                                                <input type="number" id="transformer-learning-rate" value="0.0005" min="0.0001" max="0.01" step="0.0001">
+                                            </div>
+                                            <div class="param-group">
+                                                <label for="transformer-epochs">Epochs</label>
+                                                <input type="number" id="transformer-epochs" value="25" min="5" max="200">
+                                            </div>
+                                            <div class="param-group">
+                                                <label for="transformer-batch-size">Batch Size</label>
+                                                <input type="number" id="transformer-batch-size" value="32" min="8" max="128">
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- Neural Network Parameters -->
+                                    <div id="nn-params" class="model-params" style="display: none;">
+                                        <h4>🧠 Neural Network Parameters</h4>
+                                        <div class="params-grid">
+                                            <div class="param-group">
+                                                <label for="nn-hidden-layers">Number of Hidden Layers</label>
+                                                <input type="number" id="nn-hidden-layers" value="2" min="1" max="5">
+                                            </div>
+                                            <div class="param-group">
+                                                <label for="nn-neurons-layer1">Neurons in Layer 1</label>
+                                                <input type="number" id="nn-neurons-layer1" value="64" min="16" max="512">
+                                            </div>
+                                            <div class="param-group">
+                                                <label for="nn-neurons-layer2">Neurons in Layer 2</label>
+                                                <input type="number" id="nn-neurons-layer2" value="32" min="8" max="256">
+                                            </div>
+                                            <div class="param-group">
+                                                <label for="nn-dropout">Dropout Rate</label>
+                                                <input type="number" id="nn-dropout" value="0.3" min="0" max="0.7" step="0.1">
+                                            </div>
+                                            <div class="param-group">
+                                                <label for="nn-optimizer">Optimizer</label>
+                                                <select id="nn-optimizer">
+                                                    <option value="Adam">Adam</option>
+                                                    <option value="SGD">SGD</option>
+                                                    <option value="RMSprop">RMSprop</option>
+                                                </select>
+                                            </div>
+                                            <div class="param-group">
+                                                <label for="nn-loss">Loss Function</label>
+                                                <select id="nn-loss">
+                                                    <option value="MSELoss">MSE Loss</option>
+                                                    <option value="L1Loss">L1 Loss</option>
+                                                    <option value="SmoothL1Loss">Smooth L1 Loss</option>
+                                                </select>
+                                            </div>
+                                            <div class="param-group">
+                                                <label for="nn-learning-rate">Learning Rate</label>
+                                                <input type="number" id="nn-learning-rate" value="0.001" min="0.0001" max="0.01" step="0.0001">
+                                            </div>
+                                            <div class="param-group">
+                                                <label for="nn-epochs">Epochs</label>
+                                                <input type="number" id="nn-epochs" value="100" min="10" max="500">
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- XGBoost Parameters -->
+                                    <div id="xgboost-params" class="model-params" style="display: none;">
+                                        <h4>🌳 XGBoost Parameters</h4>
+                                        <div class="params-grid">
+                                            <div class="param-group">
+                                                <label for="xgb-objective">Objective Function</label>
+                                                <select id="xgb-objective">
+                                                    <option value="multi:softmax">Multi-class Softmax</option>
+                                                    <option value="multi:softprob">Multi-class Softprob</option>
+                                                </select>
+                                            </div>
+                                            <div class="param-group">
+                                                <label for="xgb-eval-metric">Evaluation Metric</label>
+                                                <select id="xgb-eval-metric">
+                                                    <option value="mlogloss">Multi-class Log Loss</option>
+                                                    <option value="merror">Multi-class Error</option>
+                                                </select>
+                                            </div>
+                                            <div class="param-group">
+                                                <label for="xgb-n-estimators">Number of Estimators</label>
+                                                <input type="number" id="xgb-n-estimators" value="150" min="50" max="1000">
+                                            </div>
+                                            <div class="param-group">
+                                                <label for="xgb-learning-rate">Learning Rate</label>
+                                                <input type="number" id="xgb-learning-rate" value="0.1" min="0.01" max="0.3" step="0.01">
+                                            </div>
+                                            <div class="param-group">
+                                                <label for="xgb-max-depth">Maximum Depth</label>
+                                                <input type="number" id="xgb-max-depth" value="4" min="2" max="10">
+                                            </div>
+                                            <div class="param-group">
+                                                <label for="xgb-look-ahead">Look Ahead Periods</label>
+                                                <input type="text" id="xgb-look-ahead" value="3,5" placeholder="e.g., 3,5">
+                                            </div>
+                                            <div class="param-group">
+                                                <label for="xgb-min-tick">Minimum Tick Change</label>
+                                                <input type="number" id="xgb-min-tick" value="20" min="5" max="100">
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Training Options -->
+                            <div class="form-group">
+                                <label>Training Options</label>
+                                <div class="training-options">
+                                    <label class="checkbox-label">
+                                        <input type="checkbox" id="auto-save" checked>
+                                        <span class="checkmark"></span>
+                                        Auto-save model after training
+                                    </label>
+                                    <label class="checkbox-label">
+                                        <input type="checkbox" id="show-logs" checked>
+                                        <span class="checkmark"></span>
+                                        Show detailed training logs
+                                    </label>
+                                </div>
+                            </div>
+
+                            <!-- Submit Button -->
+                            <div class="form-actions">
+                                <button type="submit" id="start-training-btn" class="btn btn-primary">
+                                    <span class="btn-text">🚀 Start Training</span>
+                                    <span class="btn-loading" style="display: none;">⏳ Starting...</span>
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+
+                    <!-- Training Progress -->
+                    <div id="training-progress-section" class="card training-progress-card" style="display: none;">
+                        <h3>📊 Training Progress</h3>
+                        
+                        <div class="progress-info">
+                            <div class="progress-header">
+                                <span id="training-status" class="status-badge">Starting</span>
+                                <span id="training-model-type" class="model-type-badge"></span>
+                            </div>
+                            
+                            <div class="progress-bar-container">
+                                <div class="progress-bar">
+                                    <div id="progress-fill" class="progress-fill"></div>
+                                </div>
+                                <span id="progress-text" class="progress-text">0%</span>
+                            </div>
+                            
+                            <div class="progress-details">
+                                <div class="progress-item">
+                                    <span class="label">Status:</span>
+                                    <span id="progress-message" class="value">Initializing...</span>
+                                </div>
+                                <div class="progress-item">
+                                    <span class="label">Started:</span>
+                                    <span id="progress-start-time" class="value">-</span>
+                                </div>
+                                <div class="progress-item">
+                                    <span class="label">Duration:</span>
+                                    <span id="progress-duration" class="value">-</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="progress-actions">
+                            <button id="stop-training-btn" class="btn btn-danger" style="display: none;">
+                                ⏹️ Stop Training
+                            </button>
+                            <button id="view-logs-btn" class="btn btn-secondary">
+                                📋 View Logs
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Training Logs -->
+                    <div id="training-logs-section" class="card training-logs-card" style="display: none;">
+                        <div class="logs-header">
+                            <h3>📋 Training Logs</h3>
+                            <div class="logs-controls">
+                                <button id="clear-logs-btn" class="btn btn-small">🗑️ Clear</button>
+                                <button id="export-logs-btn" class="btn btn-small">💾 Export</button>
+                                <button id="toggle-auto-scroll" class="btn btn-small active">📌 Auto-scroll</button>
+                            </div>
+                        </div>
+                        
+                        <div id="training-logs" class="logs-container">
+                            <div class="log-entry">
+                                <span class="log-timestamp">[00:00:00]</span>
+                                <span class="log-message">Training logs will appear here...</span>
+                            </div>
+                </div>
+            </div>
+
+                    <!-- Training History -->
+                    <div class="card training-history-card">
+                        <h3>📚 Training History</h3>
+                        <div id="training-history" class="training-history-list">
+                            <div class="loading">Loading training history...</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Backtesting Tab -->
+            <div class="tab-content" id="backtesting-content">
+                <!-- Backtesting content will be loaded here -->
+            </div>
+
+            <!-- API Hosting Tab -->
+            <div class="tab-content" id="api-hosting-content">
+                <!-- API Hosting content will be loaded here -->
+            </div>
+
+        </div>
+    </div>
+
+    <!-- EEL Script -->
+    <script type="text/javascript" src="/eel.js"></script>
+    
+    <!-- Main JavaScript -->
+    <script src="js/main.js"></script>
+    
+    <!-- Tab-specific JavaScript -->
+    <script src="js/model-library.js"></script>
+    <script src="js/training.js"></script>
+    <script src="js/backtesting.js"></script>
+    <script src="js/api-hosting.js"></script>
+</body>
+</html>

@@ -1,0 +1,169 @@
+<!-- Training Tab Content -->
+<div class="tab-content" id="training-content">
+    <div class="training-container">
+        <!-- Training Header -->
+        <div class="training-header">
+            <h2>🚀 Model Training</h2>
+            <p>Train new machine learning models with your data</p>
+        </div>
+
+        <!-- Training Form -->
+        <div class="card training-form-card">
+            <h3>📋 Training Configuration</h3>
+            
+            <form id="training-form" class="training-form">
+                <!-- Model Type Selection -->
+                <div class="form-group">
+                    <label for="model-type">Model Type</label>
+                    <select id="model-type" name="model-type" required>
+                        <option value="">Select a model type...</option>
+                        <option value="transformer">🔄 Transformer (Time-series Forecasting)</option>
+                        <option value="nn">🧠 Neural Network (Price Change Regression)</option>
+                        <option value="xgboost">🌳 XGBoost (Action Classification)</option>
+                    </select>
+                    <div class="form-help">
+                        <span class="help-text" data-model="transformer" style="display: none;">
+                            Time-series forecasting model for predicting future values
+                        </span>
+                        <span class="help-text" data-model="nn" style="display: none;">
+                            Neural network for predicting price changes with regression
+                        </span>
+                        <span class="help-text" data-model="xgboost" style="display: none;">
+                            XGBoost classifier for 5-class action classification
+                        </span>
+                    </div>
+                </div>
+
+                <!-- CSV File Selection -->
+                <div class="form-group">
+                    <label for="csv-file">Training Data</label>
+                    <div class="file-input-container">
+                        <input type="file" id="csv-file" name="csv-file" accept=".csv" required>
+                        <div class="file-input-display">
+                            <span class="file-input-text">Choose CSV file or drag & drop</span>
+                            <span class="file-input-icon">📁</span>
+                        </div>
+                    </div>
+                                    <div class="form-help">
+                    Select a CSV file containing your training data. You can either upload a new file or select from the available files list below. The file should have appropriate columns for the selected model type.
+                </div>
+                </div>
+
+                <!-- Available CSV Files -->
+                <div class="form-group">
+                    <label>Available CSV Files</label>
+                    <div class="form-help">
+                        Click on any file below to select it for training, or upload a new file above.
+                    </div>
+                    <div id="available-csv-files" class="csv-files-list">
+                        <div class="loading">Loading available CSV files...</div>
+                    </div>
+                </div>
+
+                                            <!-- Model Name Override -->
+                            <div class="form-group">
+                                <label for="model-name">Model Name (Optional)</label>
+                                <input type="text" id="model-name" name="model-name" placeholder="Leave empty for auto-generated name">
+                                <div class="form-help">
+                                    Specify a custom name for your model. If left empty, a name will be auto-generated based on the model type and timestamp.
+                                </div>
+                            </div>
+
+                            <!-- Training Options -->
+                            <div class="form-group">
+                                <label>Training Options</label>
+                                <div class="training-options">
+                                    <label class="checkbox-label">
+                                        <input type="checkbox" id="auto-save" checked>
+                                        <span class="checkmark"></span>
+                                        Auto-save model after training
+                                    </label>
+                                    <label class="checkbox-label">
+                                        <input type="checkbox" id="show-logs" checked>
+                                        <span class="checkmark"></span>
+                                        Show detailed training logs
+                                    </label>
+                                </div>
+                            </div>
+
+                <!-- Submit Button -->
+                <div class="form-actions">
+                    <button type="submit" id="start-training-btn" class="btn btn-primary">
+                        <span class="btn-text">🚀 Start Training</span>
+                        <span class="btn-loading" style="display: none;">⏳ Starting...</span>
+                    </button>
+                </div>
+            </form>
+        </div>
+
+        <!-- Training Progress -->
+        <div id="training-progress-section" class="card training-progress-card" style="display: none;">
+            <h3>📊 Training Progress</h3>
+            
+            <div class="progress-info">
+                <div class="progress-header">
+                    <span id="training-status" class="status-badge">Starting</span>
+                    <span id="training-model-type" class="model-type-badge"></span>
+                </div>
+                
+                <div class="progress-bar-container">
+                    <div class="progress-bar">
+                        <div id="progress-fill" class="progress-fill"></div>
+                    </div>
+                    <span id="progress-text" class="progress-text">0%</span>
+                </div>
+                
+                <div class="progress-details">
+                    <div class="progress-item">
+                        <span class="label">Status:</span>
+                        <span id="progress-message" class="value">Initializing...</span>
+                    </div>
+                    <div class="progress-item">
+                        <span class="label">Started:</span>
+                        <span id="progress-start-time" class="value">-</span>
+                    </div>
+                    <div class="progress-item">
+                        <span class="label">Duration:</span>
+                        <span id="progress-duration" class="value">-</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="progress-actions">
+                <button id="stop-training-btn" class="btn btn-danger" style="display: none;">
+                    ⏹️ Stop Training
+                </button>
+                <button id="view-logs-btn" class="btn btn-secondary">
+                    📋 View Logs
+                </button>
+            </div>
+        </div>
+
+        <!-- Training Logs -->
+        <div id="training-logs-section" class="card training-logs-card" style="display: none;">
+            <div class="logs-header">
+                <h3>📋 Training Logs</h3>
+                <div class="logs-controls">
+                    <button id="clear-logs-btn" class="btn btn-small">🗑️ Clear</button>
+                    <button id="export-logs-btn" class="btn btn-small">💾 Export</button>
+                    <button id="toggle-auto-scroll" class="btn btn-small active">📌 Auto-scroll</button>
+                </div>
+            </div>
+            
+            <div id="training-logs" class="logs-container">
+                <div class="log-entry">
+                    <span class="log-timestamp">[00:00:00]</span>
+                    <span class="log-message">Training logs will appear here...</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Training History -->
+        <div class="card training-history-card">
+            <h3>📚 Training History</h3>
+            <div id="training-history" class="training-history-list">
+                <div class="loading">Loading training history...</div>
+            </div>
+        </div>
+    </div>
+</div>

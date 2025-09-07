@@ -1,0 +1,204 @@
+<!-- Backtesting Tab Content -->
+<div class="backtesting-container">
+    <!-- Backtesting Header -->
+    <div class="backtesting-header">
+        <h2>📊 Model Backtesting</h2>
+        <p>Test your trained models with historical data and analyze performance</p>
+    </div>
+
+    <!-- Backtesting Configuration -->
+    <div class="card backtesting-form-card">
+        <h3>⚙️ Backtest Configuration</h3>
+        
+        <form id="backtesting-form" class="backtesting-form">
+            <!-- Model Selection -->
+            <div class="form-group">
+                <label for="backtest-model">Select Model</label>
+                <select id="backtest-model" name="backtest-model" required>
+                    <option value="">Choose a model to backtest...</option>
+                </select>
+                <div class="form-help">
+                    Select a trained model from your model library to run the backtest on.
+                </div>
+            </div>
+
+            <!-- Data File Selection -->
+            <div class="form-group">
+                <label for="backtest-data">Historical Data</label>
+                <div class="file-input-container">
+                    <input type="file" id="backtest-data" name="backtest-data" accept=".csv" required>
+                    <div class="file-input-display">
+                        <span class="file-input-text">Choose CSV file or drag & drop</span>
+                        <span class="file-input-icon">📁</span>
+                    </div>
+                </div>
+                <div class="form-help">
+                    Select a CSV file containing historical data for backtesting. Must include 'Close' price and required features.
+                </div>
+            </div>
+
+            <!-- Available CSV Files -->
+            <div class="form-group">
+                <label>Available CSV Files</label>
+                <div id="available-backtest-csv-files" class="csv-files-list">
+                    <div class="loading">Loading available CSV files...</div>
+                </div>
+            </div>
+
+            <!-- Backtest Parameters -->
+            <div class="form-group">
+                <div class="params-header">
+                    <h4>📈 Trading Parameters</h4>
+                    <p>Configure the trading strategy parameters</p>
+                </div>
+                
+                <div class="params-grid">
+                    <div class="param-item">
+                        <label for="initial-capital">Initial Capital ($)</label>
+                        <input type="number" id="initial-capital" name="initial-capital" value="50000" min="1000" step="1000" required>
+                        <div class="form-help">Starting capital for the backtest</div>
+                    </div>
+                    
+                    <div class="param-item">
+                        <label for="take-profit-pips">Take Profit (Pips)</label>
+                        <input type="number" id="take-profit-pips" name="take-profit-pips" value="50" min="1" step="1" required>
+                        <div class="form-help">Profit target in pips</div>
+                    </div>
+                    
+                    <div class="param-item">
+                        <label for="stop-loss-pips">Stop Loss (Pips)</label>
+                        <input type="number" id="stop-loss-pips" name="stop-loss-pips" value="25" min="1" step="1" required>
+                        <div class="form-help">Stop loss in pips</div>
+                    </div>
+                    
+                    <div class="param-item">
+                        <label for="tick-size">Tick Size</label>
+                        <input type="number" id="tick-size" name="tick-size" value="0.25" min="0.01" step="0.01" required>
+                        <div class="form-help">Minimum price movement</div>
+                    </div>
+                    
+                    <div class="param-item">
+                        <label for="tick-value">Tick Value ($)</label>
+                        <select id="tick-value" name="tick-value" required>
+                            <option value="5">NQ (Nasdaq-100) - $5</option>
+                            <option value="12.5">ES (E-mini S&P 500) - $12.50</option>
+                            <option value="5">YM (E-mini Dow) - $5</option>
+                            <option value="5">RTY (E-mini Russell) - $5</option>
+                            <option value="custom">Custom</option>
+                        </select>
+                        <div class="form-help">Dollar value per tick movement</div>
+                    </div>
+                    
+                    <div class="param-item" id="custom-tick-value-container" style="display: none;">
+                        <label for="custom-tick-value-input">Custom Tick Value ($)</label>
+                        <input type="number" id="custom-tick-value-input" name="custom-tick-value-input" value="5" min="0.01" step="0.01">
+                        <div class="form-help">Enter custom tick value</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Submit Button -->
+            <div class="form-actions">
+                <button type="submit" id="start-backtest-btn" class="btn btn-primary">
+                    <span class="btn-text">🚀 Start Backtest</span>
+                    <span class="btn-loading" style="display: none;">⏳ Running...</span>
+                </button>
+            </div>
+        </form>
+    </div>
+
+    <!-- Backtest Results -->
+    <div id="backtest-results-section" class="card backtest-results-card" style="display: none;">
+        <h3>📊 Backtest Results</h3>
+        
+        <!-- Performance Metrics -->
+        <div class="metrics-grid">
+            <div class="metric-card">
+                <div class="metric-value" id="net-profit">$0.00</div>
+                <div class="metric-label">Net Profit</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-value" id="max-drawdown">0.00%</div>
+                <div class="metric-label">Max Drawdown</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-value" id="profit-factor">0.00</div>
+                <div class="metric-label">Profit Factor</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-value" id="win-rate">0.00%</div>
+                <div class="metric-label">Win Rate</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-value" id="total-trades">0</div>
+                <div class="metric-label">Total Trades</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-value" id="avg-win">$0.00</div>
+                <div class="metric-label">Avg Win</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-value" id="avg-loss">$0.00</div>
+                <div class="metric-label">Avg Loss</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-value" id="final-capital">$0.00</div>
+                <div class="metric-label">Final Capital</div>
+            </div>
+        </div>
+
+        <!-- Equity Curve Chart -->
+        <div class="chart-container">
+            <h4>📈 Equity Curve</h4>
+            <div id="equity-chart" class="chart">
+                <canvas id="equity-chart-canvas"></canvas>
+            </div>
+        </div>
+
+        <!-- Trade History -->
+        <div class="trade-history-container">
+            <h4>📋 Trade History</h4>
+            <div class="trade-history-controls">
+                <button id="export-trades-btn" class="btn btn-small">💾 Export Trades</button>
+                <button id="clear-trades-btn" class="btn btn-small">🗑️ Clear</button>
+            </div>
+            <div id="trade-history" class="trade-history-list">
+                <div class="no-trades">No trades to display</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Backtest Progress -->
+    <div id="backtest-progress-section" class="card backtest-progress-card" style="display: none;">
+        <h3>⏳ Backtest Progress</h3>
+        
+        <div class="progress-info">
+            <div class="progress-header">
+                <span id="backtest-status" class="status-badge">Starting</span>
+                <span id="backtest-model-type" class="model-type-badge"></span>
+            </div>
+            
+            <div class="progress-bar-container">
+                <div class="progress-bar">
+                    <div id="backtest-progress-fill" class="progress-fill"></div>
+                </div>
+                <span id="backtest-progress-text" class="progress-text">0%</span>
+            </div>
+            
+            <div class="progress-details">
+                <div class="progress-item">
+                    <span class="label">Status:</span>
+                    <span id="backtest-progress-message" class="value">Initializing...</span>
+                </div>
+                <div class="progress-item">
+                    <span class="label">Started:</span>
+                    <span id="backtest-progress-start-time" class="value">-</span>
+                </div>
+                <div class="progress-item">
+                    <span class="label">Duration:</span>
+                    <span id="backtest-progress-duration" class="value">-</span>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>

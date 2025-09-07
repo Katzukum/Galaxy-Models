@@ -1,0 +1,185 @@
+<!-- API Hosting Tab Content -->
+<div class="api-hosting-container">
+    <!-- API Hosting Header -->
+    <div class="api-hosting-header">
+        <h2>🌐 API Hosting</h2>
+        <p>Host your trained models as REST APIs for real-time predictions</p>
+    </div>
+
+    <!-- API Configuration -->
+    <div class="card api-config-card">
+        <h3>⚙️ API Configuration</h3>
+        
+        <form id="api-hosting-form" class="api-hosting-form">
+            <!-- Model Selection -->
+            <div class="form-group">
+                <label for="api-model">Select Model</label>
+                <select id="api-model" name="api-model" required>
+                    <option value="">Choose a model to host...</option>
+                </select>
+                <div class="form-help">
+                    Select a trained model from your model library to host as an API.
+                </div>
+            </div>
+
+            <!-- API Settings -->
+            <div class="form-group">
+                <div class="params-header">
+                    <h4>🔧 API Settings</h4>
+                    <p>Configure the API server settings</p>
+                </div>
+                
+                <div class="params-grid">
+                    <div class="param-item">
+                        <label for="api-host">Host Address</label>
+                        <input type="text" id="api-host" name="api-host" value="127.0.0.1" required>
+                        <div class="form-help">IP address to bind the API server</div>
+                    </div>
+                    
+                    <div class="param-item">
+                        <label for="api-port">Port</label>
+                        <input type="number" id="api-port" name="api-port" value="8081" min="1024" max="65535" required>
+                        <div class="form-help">Port number for the API server</div>
+                    </div>
+                    
+                    <div class="param-item">
+                        <label for="api-title">API Title</label>
+                        <input type="text" id="api-title" name="api-title" value="ML Model Serving API" required>
+                        <div class="form-help">Title displayed in API documentation</div>
+                    </div>
+                    
+                    <div class="param-item">
+                        <label for="api-description">API Description</label>
+                        <input type="text" id="api-description" name="api-description" value="A generic API to serve predictions from various model types." required>
+                        <div class="form-help">Description for the API documentation</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Model Information Display -->
+            <div id="model-info-section" class="form-group" style="display: none;">
+                <h4>📋 Model Information</h4>
+                <div id="model-info-content" class="model-info-display">
+                    <!-- Model details will be populated here -->
+                </div>
+            </div>
+
+            <!-- API Control Buttons -->
+            <div class="form-actions">
+                <button type="button" id="start-api-btn" class="btn btn-primary">
+                    <span class="btn-text">🚀 Start API Server</span>
+                    <span class="btn-loading" style="display: none;">⏳ Starting...</span>
+                </button>
+                <button type="button" id="stop-api-btn" class="btn btn-danger" style="display: none;">
+                    <span class="btn-text">⏹️ Stop API Server</span>
+                    <span class="btn-loading" style="display: none;">⏳ Stopping...</span>
+                </button>
+                <button type="button" id="test-api-btn" class="btn btn-secondary" style="display: none;">
+                    <span class="btn-text">🧪 Test API</span>
+                </button>
+            </div>
+        </form>
+    </div>
+
+    <!-- API Status -->
+    <div id="api-status-section" class="card api-status-card" style="display: none;">
+        <h3>📊 API Status</h3>
+        
+        <div class="status-info">
+            <div class="status-header">
+                <span id="api-status" class="status-badge">Stopped</span>
+                <span id="api-model-name" class="model-type-badge"></span>
+            </div>
+            
+            <div class="status-details">
+                <div class="status-item">
+                    <span class="label">Status:</span>
+                    <span id="api-status-message" class="value">API Server is stopped</span>
+                </div>
+                <div class="status-item">
+                    <span class="label">URL:</span>
+                    <span id="api-url" class="value">-</span>
+                </div>
+                <div class="status-item">
+                    <span class="label">Documentation:</span>
+                    <span id="api-docs-url" class="value">-</span>
+                </div>
+                <div class="status-item">
+                    <span class="label">Started:</span>
+                    <span id="api-start-time" class="value">-</span>
+                </div>
+                <div class="status-item">
+                    <span class="label">Uptime:</span>
+                    <span id="api-uptime" class="value">-</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="status-actions">
+            <button id="view-docs-btn" class="btn btn-secondary" style="display: none;">
+                📚 View API Docs
+            </button>
+            <button id="copy-url-btn" class="btn btn-small">
+                📋 Copy URL
+            </button>
+        </div>
+    </div>
+
+    <!-- API Testing -->
+    <div id="api-testing-section" class="card api-testing-card" style="display: none;">
+        <h3>🧪 API Testing</h3>
+        
+        <div class="test-form">
+            <div class="form-group">
+                <label for="test-features">Test Features (JSON)</label>
+                <textarea id="test-features" name="test-features" rows="8" placeholder='{"Open": 18000.25, "High": 18005.50, "Low": 18000.00, "Close": 18004.75, "Volume": 1500, "Feature6": 0.5, "Feature7": -0.2, "Feature8": 1.1, "Feature9": 17990.0, "Feature10": 17985.5}'></textarea>
+                <div class="form-help">
+                    Enter feature values as JSON. Use the model information above to see required features.
+                </div>
+            </div>
+            
+            <div class="form-actions">
+                <button type="button" id="send-test-btn" class="btn btn-primary">
+                    🚀 Send Test Request
+                </button>
+                <button type="button" id="clear-test-btn" class="btn btn-small">
+                    🗑️ Clear
+                </button>
+            </div>
+        </div>
+
+        <div id="test-results" class="test-results" style="display: none;">
+            <h4>📊 Test Results</h4>
+            <div id="test-response" class="test-response">
+                <!-- Test response will be displayed here -->
+            </div>
+        </div>
+    </div>
+
+    <!-- API Logs -->
+    <div id="api-logs-section" class="card api-logs-card">
+        <div class="logs-header">
+            <h3>📋 API Server Logs</h3>
+            <div class="logs-controls">
+                <button id="clear-api-logs-btn" class="btn btn-small">🗑️ Clear</button>
+                <button id="export-api-logs-btn" class="btn btn-small">💾 Export</button>
+                <button id="toggle-api-auto-scroll" class="btn btn-small active">📌 Auto-scroll</button>
+            </div>
+        </div>
+        
+        <div id="api-logs" class="logs-container">
+            <div class="log-entry">
+                <span class="log-timestamp">[00:00:00]</span>
+                <span class="log-message">API server logs will appear here when you start the server...</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- API History -->
+    <div class="card api-history-card">
+        <h3>📚 API History</h3>
+        <div id="api-history" class="api-history-list">
+            <div class="loading">Loading API history...</div>
+        </div>
+    </div>
+</div>

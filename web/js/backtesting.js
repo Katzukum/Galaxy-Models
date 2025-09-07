@@ -1,0 +1,590 @@
+// Backtesting Tab JavaScript
+class Backtesting {
+    constructor() {
+        this.currentBacktest = null;
+        this.trades = [];
+        this.equityCurve = [];
+        this.equityChart = null;
+        this.init();
+    }
+
+    init() {
+        this.loadBacktestingContent();
+    }
+
+    async loadBacktestingContent() {
+        try {
+            const response = await fetch('tabs/backtesting/backtesting.html');
+            const html = await response.text();
+            document.getElementById('backtesting-content').innerHTML = html;
+            
+            // Wait a bit for DOM to be ready
+            setTimeout(() => {
+                this.setupEventListeners();
+                this.loadAvailableModels();
+                this.loadAvailableCSVFiles();
+            }, 100);
+        } catch (error) {
+            console.error('Error loading backtesting content:', error);
+        }
+    }
+
+    setupEventListeners() {
+        // Form submission
+        const form = document.getElementById('backtesting-form');
+        if (form) {
+            form.addEventListener('submit', (e) => this.handleFormSubmit(e));
+        }
+
+        // File input handling
+        const fileInput = document.getElementById('backtest-data');
+        if (fileInput) {
+            fileInput.addEventListener('change', (e) => this.handleFileSelect(e));
+        }
+
+        // Tick value dropdown handling
+        const tickValueSelect = document.getElementById('tick-value');
+        if (tickValueSelect) {
+            tickValueSelect.addEventListener('change', (e) => this.handleTickValueChange(e));
+        }
+
+        // Export and clear buttons
+        const exportBtn = document.getElementById('export-trades-btn');
+        if (exportBtn) {
+            exportBtn.addEventListener('click', () => this.exportTrades());
+        }
+
+        const clearBtn = document.getElementById('clear-trades-btn');
+        if (clearBtn) {
+            clearBtn.addEventListener('click', () => this.clearResults());
+        }
+    }
+
+    async loadAvailableModels() {
+        try {
+            const models = await eel.get_available_models()();
+            const select = document.getElementById('backtest-model');
+            if (select) {
+                select.innerHTML = '<option value="">Choose a model to backtest...</option>';
+                models.forEach(model => {
+                    const option = document.createElement('option');
+                    option.value = model.config_path;
+                    option.textContent = `${model.name} (${model.type})`;
+                    select.appendChild(option);
+                });
+            }
+        } catch (error) {
+            console.error('Error loading models:', error);
+            this.showNotification('Error loading models', 'error');
+        }
+    }
+
+    async loadAvailableCSVFiles() {
+        try {
+            const csvFiles = await eel.get_available_csv_files()();
+            const container = document.getElementById('available-backtest-csv-files');
+            if (container) {
+                if (csvFiles.length === 0) {
+                    container.innerHTML = '<div class="no-files">No CSV files found</div>';
+                    return;
+                }
+
+                container.innerHTML = csvFiles.map(file => `
+                    <div class="csv-file-item" data-path="${file.path}">
+                        <div class="csv-file-info">
+                            <div class="csv-file-name">${file.name}</div>
+                            <div class="csv-file-details">
+                                Modified: ${new Date(file.modified).toLocaleString()}
+                            </div>
+                        </div>
+                        <div class="csv-file-size">${this.formatFileSize(file.size)}</div>
+                    </div>
+                `).join('');
+
+                // Add click handlers for CSV file selection
+                container.querySelectorAll('.csv-file-item').forEach(item => {
+                    item.addEventListener('click', () => {
+                        this.selectCSVFile(item);
+                    });
+                });
+            }
+        } catch (error) {
+            console.error('Error loading CSV files:', error);
+        }
+    }
+
+    selectCSVFile(item) {
+        // Remove previous selection
+        document.querySelectorAll('.csv-file-item').forEach(i => {
+            i.classList.remove('selected');
+        });
+
+        // Add selection to clicked item
+        item.classList.add('selected');
+
+        // Update file input display
+        const filePath = item.dataset.path;
+        const fileName = filePath.split('/').pop() || filePath.split('\\').pop();
+        const fileInput = document.getElementById('backtest-data');
+        const display = fileInput.parentElement.querySelector('.file-input-display');
+        
+        if (display) {
+            display.querySelector('.file-input-text').textContent = fileName;
+            display.classList.add('has-file');
+        }
+    }
+
+    formatFileSize(bytes) {
+        if (bytes === 0) return '0 Bytes';
+        const k = 1024;
+        const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    }
+
+    fileToBase64(file) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.readAsDataURL(file);
+            reader.onload = () => {
+                // Remove the data URL prefix (data:type;base64,)
+                const base64 = reader.result.split(',')[1];
+                resolve(base64);
+            };
+            reader.onerror = error => reject(error);
+        });
+    }
+
+
+
+    handleFileSelect(event) {
+        const file = event.target.files[0];
+        if (file) {
+            const display = event.target.parentElement.querySelector('.file-input-display');
+            if (display) {
+                display.querySelector('.file-input-text').textContent = file.name;
+            }
+        }
+    }
+
+    handleTickValueChange(event) {
+        const selectedValue = event.target.value;
+        const customContainer = document.getElementById('custom-tick-value-container');
+        
+        if (selectedValue === 'custom') {
+            customContainer.style.display = 'block';
+            setTimeout(() => {
+                customContainer.classList.add('show');
+            }, 10);
+        } else {
+            customContainer.classList.remove('show');
+            setTimeout(() => {
+                customContainer.style.display = 'none';
+            }, 300);
+        }
+    }
+
+    async handleFormSubmit(event) {
+        event.preventDefault();
+        
+        const formData = new FormData(event.target);
+        const configPath = formData.get('backtest-model');
+        const dataFile = formData.get('backtest-data');
+        const initialCapital = parseFloat(formData.get('initial-capital'));
+        const takeProfitPips = parseInt(formData.get('take-profit-pips'));
+        const stopLossPips = parseInt(formData.get('stop-loss-pips'));
+        const tickSize = parseFloat(formData.get('tick-size'));
+        
+        // Handle tick value
+        let tickValue = parseFloat(formData.get('tick-value'));
+        if (formData.get('tick-value') === 'custom') {
+            tickValue = parseFloat(formData.get('custom-tick-value-input'));
+        }
+
+        if (!configPath) {
+            this.showNotification('Please select a model', 'error');
+            return;
+        }
+
+        // Check for data file - either from available files list or file input
+        let dataPath = '';
+        
+        // First, check if a file is selected from the available files list
+        const selectedFileItem = document.querySelector('.csv-file-item.selected');
+        if (selectedFileItem) {
+            dataPath = selectedFileItem.dataset.path;
+        } 
+        // If no file selected from list, check if a file was uploaded via file input
+        else if (dataFile && dataFile.size > 0) {
+            // For uploaded files, we need to save them to the server first
+            try {
+                // Convert file to base64 and send to server
+                const base64 = await this.fileToBase64(dataFile);
+                const uploadResult = await eel.upload_csv_file({
+                    'name': dataFile.name,
+                    'content': base64
+                })();
+                
+                if (uploadResult.success) {
+                    dataPath = uploadResult.file_path;
+                } else {
+                    this.showNotification(`File upload failed: ${uploadResult.error}`, 'error');
+                    return;
+                }
+            } catch (error) {
+                console.error('File upload error:', error);
+                this.showNotification('File upload failed', 'error');
+                return;
+            }
+        } 
+        // If neither, show error
+        else {
+            this.showNotification('Please select a CSV file from the available files list', 'error');
+            return;
+        }
+
+        this.startBacktest({
+            config_path: configPath,
+            data_path: dataPath,
+            initial_capital: initialCapital,
+            take_profit_pips: takeProfitPips,
+            stop_loss_pips: stopLossPips,
+            tick_size: tickSize,
+            tick_value: tickValue
+        });
+    }
+
+    async startBacktest(backtestParams) {
+        try {
+            this.showProgressSection();
+            this.updateProgress(0, 'Initializing backtest...');
+            
+            // Debug: Log the parameters being sent
+            console.log('Backtest parameters:', backtestParams);
+            
+            // Start the backtest
+            const result = await eel.run_backtest(backtestParams)();
+            
+            console.log('Backtest result:', result);
+            
+            if (result.success) {
+                this.displayResults(result.data);
+                this.showNotification('Backtest completed successfully!', 'success');
+            } else {
+                this.showNotification(`Backtest failed: ${result.error}`, 'error');
+            }
+        } catch (error) {
+            console.error('Backtest error:', error);
+            this.showNotification('Backtest failed with an error', 'error');
+        } finally {
+            this.hideProgressSection();
+        }
+    }
+
+    displayResults(data) {
+        this.trades = data.trades || [];
+        this.equityCurve = data.equity_history || [];
+        
+        // Update metrics
+        this.updateMetrics(data.metrics);
+        
+        // Render equity chart
+        this.renderEquityChart();
+        
+        // Display trade history
+        this.displayTradeHistory();
+        
+        // Show results section
+        document.getElementById('backtest-results-section').style.display = 'block';
+    }
+
+    updateMetrics(metrics) {
+        const metricElements = {
+            'net-profit': `$${metrics.net_profit?.toFixed(2) || '0.00'}`,
+            'max-drawdown': `${metrics.max_drawdown?.toFixed(2) || '0.00'}%`,
+            'profit-factor': metrics.profit_factor?.toFixed(2) || '0.00',
+            'win-rate': `${metrics.win_rate?.toFixed(2) || '0.00'}%`,
+            'total-trades': metrics.total_trades || '0',
+            'avg-win': `$${metrics.avg_win?.toFixed(2) || '0.00'}`,
+            'avg-loss': `$${metrics.avg_loss?.toFixed(2) || '0.00'}`,
+            'final-capital': `$${metrics.final_capital?.toFixed(2) || '0.00'}`
+        };
+
+        Object.entries(metricElements).forEach(([id, value]) => {
+            const element = document.getElementById(id);
+            if (element) {
+                element.textContent = value;
+            }
+        });
+    }
+
+    renderEquityChart() {
+        const chartContainer = document.getElementById('equity-chart');
+        if (!chartContainer) return;
+        
+        if (this.equityCurve.length === 0) {
+            chartContainer.innerHTML = '<div style="display: flex; align-items: center; justify-content: center; height: 500px; color: var(--text-muted); font-size: 1.1rem;">No equity data to display</div>';
+            return;
+        }
+
+        // Clear previous chart
+        chartContainer.innerHTML = '<canvas id="equity-chart-canvas"></canvas>';
+
+        // Get the canvas element
+        const canvas = document.getElementById('equity-chart-canvas');
+        if (!canvas) return;
+
+        // Create labels for x-axis (trade numbers)
+        const labels = this.equityCurve.map((_, index) => `Trade ${index + 1}`);
+
+        // Create Chart.js configuration
+        const ctx = canvas.getContext('2d');
+        
+        // Destroy existing chart if it exists
+        if (this.equityChart) {
+            this.equityChart.destroy();
+        }
+
+        this.equityChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'Equity Curve',
+                    data: this.equityCurve,
+                    borderColor: '#ff4444',
+                    backgroundColor: 'rgba(255, 68, 68, 0.1)',
+                    borderWidth: 3,
+                    fill: true,
+                    tension: 0.1,
+                    pointRadius: 0,
+                    pointHoverRadius: 6,
+                    pointHoverBackgroundColor: '#ff4444',
+                    pointHoverBorderColor: '#ffffff',
+                    pointHoverBorderWidth: 2
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        display: true,
+                        labels: {
+                            color: '#ffffff',
+                            font: {
+                                size: 14,
+                                weight: 'bold'
+                            }
+                        }
+                    },
+                    tooltip: {
+                        backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                        titleColor: '#ffffff',
+                        bodyColor: '#ffffff',
+                        borderColor: '#ff4444',
+                        borderWidth: 1,
+                        cornerRadius: 8,
+                        displayColors: false,
+                        callbacks: {
+                            label: function(context) {
+                                return `Equity: $${context.parsed.y.toFixed(2)}`;
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    x: {
+                        display: true,
+                        title: {
+                            display: true,
+                            text: 'Trade Number',
+                            color: '#cccccc',
+                            font: {
+                                size: 14,
+                                weight: 'bold'
+                            }
+                        },
+                        grid: {
+                            color: 'rgba(255, 255, 255, 0.1)',
+                            drawBorder: false
+                        },
+                        ticks: {
+                            color: '#cccccc',
+                            font: {
+                                size: 12
+                            }
+                        }
+                    },
+                    y: {
+                        display: true,
+                        title: {
+                            display: true,
+                            text: 'Equity ($)',
+                            color: '#cccccc',
+                            font: {
+                                size: 14,
+                                weight: 'bold'
+                            }
+                        },
+                        grid: {
+                            color: 'rgba(255, 255, 255, 0.1)',
+                            drawBorder: false
+                        },
+                        ticks: {
+                            color: '#cccccc',
+                            font: {
+                                size: 12
+                            },
+                            callback: function(value) {
+                                return '$' + value.toLocaleString();
+                            }
+                        }
+                    }
+                },
+                interaction: {
+                    intersect: false,
+                    mode: 'index'
+                },
+                elements: {
+                    point: {
+                        hoverRadius: 6
+                    }
+                }
+            }
+        });
+    }
+
+    displayTradeHistory() {
+        const container = document.getElementById('trade-history');
+        if (!container) return;
+
+        if (this.trades.length === 0) {
+            container.innerHTML = '<div class="no-trades">No trades to display</div>';
+            return;
+        }
+
+        const tradeItems = this.trades.map((trade, index) => {
+            const isWin = trade > 0;
+            const tradeType = trade > 0 ? 'long' : 'short';
+            const pnlClass = trade > 0 ? 'positive' : 'negative';
+            
+            return `
+                <div class="trade-item ${isWin ? 'win' : 'loss'}" data-trade-info="Trade ${index + 1}">
+                    <div class="trade-datetime">${new Date().toLocaleString()}</div>
+                    <div class="trade-type ${tradeType}">${tradeType.toUpperCase()}</div>
+                    <div class="trade-entry">$0.00</div>
+                    <div class="trade-exit">$0.00</div>
+                    <div class="trade-pnl ${pnlClass}">$${Math.abs(trade).toFixed(2)}</div>
+                </div>
+            `;
+        }).join('');
+
+        container.innerHTML = tradeItems;
+    }
+
+    exportTrades() {
+        if (this.trades.length === 0) {
+            this.showNotification('No trades to export', 'warning');
+            return;
+        }
+
+        const csvContent = [
+            ['Trade #', 'Type', 'Entry Price', 'Exit Price', 'P&L', 'Date'],
+            ...this.trades.map((trade, index) => [
+                index + 1,
+                trade > 0 ? 'LONG' : 'SHORT',
+                '$0.00',
+                '$0.00',
+                `$${Math.abs(trade).toFixed(2)}`,
+                new Date().toLocaleString()
+            ])
+        ].map(row => row.join(',')).join('\n');
+
+        const blob = new Blob([csvContent], { type: 'text/csv' });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `backtest_trades_${new Date().toISOString().split('T')[0]}.csv`;
+        a.click();
+        window.URL.revokeObjectURL(url);
+        
+        this.showNotification('Trades exported successfully!', 'success');
+    }
+
+    clearResults() {
+        this.trades = [];
+        this.equityCurve = [];
+        
+        // Destroy the chart if it exists
+        if (this.equityChart) {
+            this.equityChart.destroy();
+            this.equityChart = null;
+        }
+        
+        document.getElementById('backtest-results-section').style.display = 'none';
+        this.showNotification('Results cleared', 'info');
+    }
+
+    showProgressSection() {
+        document.getElementById('backtest-progress-section').style.display = 'block';
+        document.getElementById('backtest-results-section').style.display = 'none';
+    }
+
+    hideProgressSection() {
+        document.getElementById('backtest-progress-section').style.display = 'none';
+    }
+
+    updateProgress(percentage, message) {
+        const progressFill = document.getElementById('backtest-progress-fill');
+        const progressText = document.getElementById('backtest-progress-text');
+        const progressMessage = document.getElementById('backtest-progress-message');
+        
+        if (progressFill) progressFill.style.width = `${percentage}%`;
+        if (progressText) progressText.textContent = `${Math.round(percentage)}%`;
+        if (progressMessage) progressMessage.textContent = message;
+    }
+
+    showNotification(message, type = 'info') {
+        // Create notification element
+        const notification = document.createElement('div');
+        notification.className = `notification notification-${type}`;
+        notification.innerHTML = `
+            <span class="notification-message">${message}</span>
+            <button class="notification-close">&times;</button>
+        `;
+        
+        // Add to page
+        document.body.appendChild(notification);
+        
+        // Show notification
+        setTimeout(() => notification.classList.add('show'), 100);
+        
+        // Auto-remove after 5 seconds
+        setTimeout(() => {
+            notification.classList.remove('show');
+            setTimeout(() => notification.remove(), 300);
+        }, 5000);
+        
+        // Close button functionality
+        notification.querySelector('.notification-close').addEventListener('click', () => {
+            notification.classList.remove('show');
+            setTimeout(() => notification.remove(), 300);
+        });
+    }
+}
+
+// Initialize backtesting when DOM is loaded
+document.addEventListener('DOMContentLoaded', () => {
+    window.Backtesting = new Backtesting();
+});
+
+// Add a method to handle tab switching
+window.BacktestingTab = {
+    loadContent: function() {
+        if (window.Backtesting) {
+            window.Backtesting.loadAvailableModels();
+            window.Backtesting.loadAvailableCSVFiles();
+        }
+    }
+};
