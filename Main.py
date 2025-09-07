@@ -13,10 +13,54 @@ from datetime import datetime
 # Initialize EEL
 eel.init('web')
 
+# Debug configuration
+DEBUG_TRAINING = True  # Set to True to open command windows for training subprocesses
+DEBUG_API = True       # Set to True to open command windows for API subprocesses
+DEBUG_VERBOSE = True   # Set to True for additional debug output
+
+# Debug helper function
+def debug_print(message):
+    """Print debug messages if DEBUG_VERBOSE is enabled"""
+    if DEBUG_VERBOSE:
+        print(f"[DEBUG] {message}")
+
 # Global variables for training management
 training_processes = {}
 training_logs = {}
 training_status = {}
+
+@eel.expose
+def get_debug_status():
+    """Get current debug configuration status"""
+    return {
+        'debug_training': DEBUG_TRAINING,
+        'debug_api': DEBUG_API,
+        'debug_verbose': DEBUG_VERBOSE
+    }
+
+@eel.expose
+def set_debug_training(enabled):
+    """Enable or disable debug mode for training processes"""
+    global DEBUG_TRAINING
+    DEBUG_TRAINING = enabled
+    debug_print(f"Debug training mode: {'enabled' if enabled else 'disabled'}")
+    return {'success': True, 'debug_training': DEBUG_TRAINING}
+
+@eel.expose
+def set_debug_api(enabled):
+    """Enable or disable debug mode for API processes"""
+    global DEBUG_API
+    DEBUG_API = enabled
+    debug_print(f"Debug API mode: {'enabled' if enabled else 'disabled'}")
+    return {'success': True, 'debug_api': DEBUG_API}
+
+@eel.expose
+def set_debug_verbose(enabled):
+    """Enable or disable verbose debug output"""
+    global DEBUG_VERBOSE
+    DEBUG_VERBOSE = enabled
+    debug_print(f"Debug verbose mode: {'enabled' if enabled else 'disabled'}")
+    return {'success': True, 'debug_verbose': DEBUG_VERBOSE}
 
 @eel.expose
 def get_models():
@@ -140,16 +184,40 @@ def run_training_process(training_id, model_type, csv_path, model_name, training
             cmd.extend(['--training_params', params_json])
         
         # Start the training process
-        process = subprocess.Popen(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            universal_newlines=True,
-            bufsize=1,
-            cwd=project_root  # Set working directory to project root
-        )
+        debug_print(f"Starting {model_type} training for model: {model_name}")
+        debug_print(f"Command: {' '.join(cmd)}")
+        debug_print(f"Working directory: {project_root}")
+        
+        if DEBUG_TRAINING:
+            # Debug mode: Open command window to show training output
+            debug_print("Opening command window for training process")
+            process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                universal_newlines=True,
+                bufsize=1,
+                cwd=project_root,
+                creationflags=subprocess.CREATE_NEW_CONSOLE if os.name == 'nt' else 0
+            )
+        else:
+            # Normal mode: Capture output for web interface
+            debug_print("Running training in background mode")
+            process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                universal_newlines=True,
+                bufsize=1,
+                cwd=project_root
+            )
         
         training_processes[training_id] = process
+        
+        debug_print(f"Training process started with PID: {process.pid}")
+        if DEBUG_TRAINING:
+            debug_print("Command window opened - check for new console window")
+            debug_print("Training output will be visible in the command window")
         
         # Read output line by line
         for line in iter(process.stdout.readline, ''):
@@ -176,17 +244,22 @@ def run_training_process(training_id, model_type, csv_path, model_name, training
         # Wait for process to complete
         return_code = process.wait()
         
+        debug_print(f"Training process completed with return code: {return_code}")
+        
         if return_code == 0:
             training_status[training_id]['status'] = 'completed'
             training_status[training_id]['progress'] = 100
             training_status[training_id]['message'] = 'Training completed successfully'
             training_status[training_id]['end_time'] = datetime.now().isoformat()
+            debug_print("Training completed successfully")
         else:
             training_status[training_id]['status'] = 'failed'
             training_status[training_id]['message'] = f'Training failed with return code: {return_code}'
             training_status[training_id]['end_time'] = datetime.now().isoformat()
+            debug_print(f"Training failed with return code: {return_code}")
             
     except Exception as e:
+        debug_print(f"Training error occurred: {str(e)}")
         training_status[training_id]['status'] = 'error'
         training_status[training_id]['message'] = f'Training error: {str(e)}'
         training_status[training_id]['end_time'] = datetime.now().isoformat()
@@ -460,18 +533,39 @@ def start_api_server(config):
         print(f"  - MODEL_DIR: {env['MODEL_DIR']}")
         print(f"  - Original MODEL_DIR: {os.environ.get('MODEL_DIR', 'Not set')}")
         
-        print("[DEBUG] Starting subprocess...")
-        api_process = subprocess.Popen(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            universal_newlines=True,
-            bufsize=1,
-            cwd=project_root,  # Set working directory to project root
-            env=env  # Pass environment variables
-        )
+        debug_print("Starting API server subprocess...")
+        if DEBUG_API:
+            # Debug mode: Open command window to show API server output
+            debug_print(f"Opening command window for API server: {' '.join(cmd)}")
+            api_process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                universal_newlines=True,
+                bufsize=1,
+                cwd=project_root,
+                env=env,
+                creationflags=subprocess.CREATE_NEW_CONSOLE if os.name == 'nt' else 0
+            )
+        else:
+            # Normal mode: Capture output for web interface
+            debug_print("Running API server in background mode")
+            api_process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                universal_newlines=True,
+                bufsize=1,
+                cwd=project_root,
+                env=env
+            )
         
         api_logs.append(f"[{datetime.now().strftime('%H:%M:%S')}] Process started with PID: {api_process.pid}")
+        
+        debug_print(f"API server process started with PID: {api_process.pid}")
+        if DEBUG_API:
+            debug_print("Command window opened for API server - check for new console window")
+            debug_print("API server output will be visible in the command window")
         
         # Start a thread to read the output
         def read_output():
