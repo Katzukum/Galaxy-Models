@@ -1,5 +1,4 @@
 import os
-import yaml
 import pickle
 import numpy as np
 import pandas as pd
@@ -7,6 +6,7 @@ import torch
 import torch.nn as nn
 from typing import Dict, Any, List, Tuple
 from collections import deque
+from Utilities.yaml_utils import YAMLConfig, load_yaml_config
 
 # Import the PPO network from PPOTrainer
 from NetworkConfigs.PPOTrainer import PPONetwork
@@ -31,14 +31,15 @@ class PPOBacktester:
         """Load the PPO model and its artifacts"""
         print("--- Loading PPO Artifacts ---")
         
-        # Load config
-        with open(self.config_path, 'r') as f:
-            self.config = yaml.safe_load(f)
+        # Load config using centralized YAML utilities
+        self.config = load_yaml_config(self.config_path)
         
-        print(f"Model Type: {self.config.get('Type')}")
+        # Use recursive key finding to get model type
+        model_type = self.config.find_key('Type')
+        print(f"Model Type: {model_type}")
         
-        # Load scaler
-        artifact_paths = self.config['artifact_paths']
+        # Load scaler using recursive key finding
+        artifact_paths = self.config.find_key('artifact_paths')
         scaler_path = os.path.join(self.model_dir, artifact_paths['scaler'])
         with open(scaler_path, 'rb') as f:
             self.scaler = pickle.load(f)

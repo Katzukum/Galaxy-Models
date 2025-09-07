@@ -60,7 +60,7 @@ print(f"[DEBUG] Model directory exists: {MODEL_DIR}")
 def get_model_loader(model_dir):
     """Determine and return the appropriate model loader based on the model type"""
     print(f"[DEBUG] get_model_loader() called with model_dir: {model_dir}")
-    import yaml
+    from Utilities.yaml_utils import load_yaml_config
     
     # Find the config file
     print(f"[DEBUG] Listing directory contents: {os.listdir(model_dir)}")
@@ -74,12 +74,12 @@ def get_model_loader(model_dir):
     config_path = os.path.join(model_dir, config_files[0])
     print(f"[DEBUG] Using config file: {config_path}")
     
-    # Read the config to determine model type
-    with open(config_path, 'r') as f:
-        config = yaml.safe_load(f)
-    print(f"[DEBUG] Loaded config: {config}")
+    # Read the config to determine model type using centralized YAML utilities
+    config = load_yaml_config(config_path)
+    print(f"[DEBUG] Loaded config: {config.to_dict()}")
     
-    model_type = config.get('Type', 'nn').lower()
+    # Use recursive key finding to get model type
+    model_type = config.find_key('Type', 'nn').lower()
     print(f"[DEBUG] Detected model type: {model_type}")
     
     # Select the appropriate loader

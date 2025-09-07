@@ -1,5 +1,4 @@
 import os
-import yaml
 import pickle
 import numpy as np
 import torch
@@ -7,6 +6,7 @@ import torch.nn as nn
 from collections import deque
 from typing import Dict, Any, List
 from pydantic import BaseModel
+from Utilities.yaml_utils import YAMLConfig, load_yaml_config
 
 # Import the PPO network from PPOTrainer
 from NetworkConfigs.PPOTrainer import PPONetwork, TradingEnvironment
@@ -52,21 +52,23 @@ class PPOModelLoader:
                 raise FileNotFoundError(f"No YAML config file found in {self.model_dir}")
             
             config_path = os.path.join(self.model_dir, config_files[0])
-            with open(config_path, 'r') as f:
-                self.config = yaml.safe_load(f)
+            self.config = load_yaml_config(config_path)
             
-            self.model_name = self.config['model_name']
+            # Extract model name using recursive key finding
+            self.model_name = self.config.find_key('model_name')
+            if not self.model_name:
+                raise ValueError("No model_name found in config")
             
-            # Extract features from config
-            if 'data_params' in self.config['Config'] and 'features' in self.config['Config']['data_params']:
-                self.features = self.config['Config']['data_params']['features']
-            elif 'features' in self.config['Config']:
-                self.features = self.config['Config']['features']
-            else:
-                raise KeyError("Could not find features in configuration")
+            # Extract features using recursive key finding
+            self.features = self.config.find_key('features')
+            if not self.features:
+                raise ValueError("No features found in config")
             
             # Load scaler
-            artifact_paths = self.config['artifact_paths']
+            artifact_paths = self.config.find_key('artifact_paths')
+            if not artifact_paths:
+                raise ValueError("No artifact_paths found in config")
+            
             scaler_path = os.path.join(self.model_dir, artifact_paths['scaler'])
             with open(scaler_path, 'rb') as f:
                 self.scaler = pickle.load(f)
@@ -74,13 +76,12 @@ class PPOModelLoader:
             # Load model
             model_path = os.path.join(self.model_dir, artifact_paths['model_state_dict'])
             
-            # Get model parameters from config
-            model_params = self.config['Config']['model_params']
-            data_input_dim = model_params.get('input_dim', len(self.features))  # Raw data features
+            # Get model parameters using recursive key finding
+            data_input_dim = self.config.find_key('input_dim', len(self.features))  # Raw data features
             input_dim = data_input_dim + 3  # +3 for account state (balance, position, unrealized_pnl)
-            hidden_dim = model_params.get('hidden_dim', 128)
-            num_actions = model_params.get('num_actions', 3)
-            lookback_window = model_params.get('lookback_window', 60)
+            hidden_dim = self.config.find_key('hidden_dim', 128)
+            num_actions = self.config.find_key('num_actions', 3)
+            lookback_window = self.config.find_key('lookback_window', 60)
             
             # Initialize and load model
             self.model = PPONetwork(

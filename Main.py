@@ -9,6 +9,7 @@ import json
 import requests
 from pathlib import Path
 from datetime import datetime
+from Utilities.yaml_utils import YAMLConfig, load_yaml_config, find_yaml_files, get_common_config_values
 
 # Initialize EEL
 eel.init('web')
@@ -72,22 +73,22 @@ def get_models():
         return models
     
     # Find all YAML files recursively in the Models folder
-    yaml_files = glob.glob(str(models_path / "**" / "*.yaml"), recursive=True)
+    yaml_files = find_yaml_files(str(models_path), recursive=True)
     
     for yaml_file in yaml_files:
         try:
-            with open(yaml_file, 'r') as file:
-                config = yaml.safe_load(file)
-                
-                # Extract model_name and Type from the YAML
-                model_name = config.get('model_name', 'Unknown Model')
-                model_type = config.get('Type', 'Unknown Type')
-                
-                models.append({
-                    'name': model_name,
-                    'type': model_type,
-                    'config_path': yaml_file
-                })
+            # Use centralized YAML utilities
+            config = load_yaml_config(yaml_file)
+            
+            # Extract model_name and Type using recursive key finding
+            model_name = config.find_key('model_name', 'Unknown Model')
+            model_type = config.find_key('Type', 'Unknown Type')
+            
+            models.append({
+                'name': model_name,
+                'type': model_type,
+                'config_path': yaml_file
+            })
         except Exception as e:
             print(f"Error reading {yaml_file}: {e}")
             continue
@@ -98,9 +99,9 @@ def get_models():
 def get_model_details(config_path):
     """Get detailed information about a specific model"""
     try:
-        with open(config_path, 'r') as file:
-            config = yaml.safe_load(file)
-            return config
+        # Use centralized YAML utilities
+        config = load_yaml_config(config_path)
+        return config.to_dict()
     except Exception as e:
         return {'error': str(e)}
 
@@ -365,27 +366,27 @@ def get_available_models():
             return models
         
         # Find all YAML files recursively in the Models folder
-        yaml_files = glob.glob(str(models_path / "**" / "*.yaml"), recursive=True)
+        yaml_files = find_yaml_files(str(models_path), recursive=True)
         print(f"[DEBUG] Found {len(yaml_files)} YAML files: {yaml_files}")
         
         for i, yaml_file in enumerate(yaml_files):
             print(f"[DEBUG] Processing YAML file {i+1}/{len(yaml_files)}: {yaml_file}")
             try:
-                with open(yaml_file, 'r') as file:
-                    config = yaml.safe_load(file)
-                    print(f"[DEBUG] Loaded config for {yaml_file}: {config}")
-                    
-                    # Extract model information
-                    model_name = config.get('model_name', 'Unknown Model')
-                    model_type = config.get('Type', 'Unknown Type')
-                    config_path = str(Path(yaml_file).absolute())
-                    
-                    model_info = {
-                        'name': model_name,
-                        'type': model_type,
-                        'config_path': config_path
-                    }
-                    print(f"[DEBUG] Created model info: {model_info}")
+                # Use centralized YAML utilities
+                config = load_yaml_config(yaml_file)
+                print(f"[DEBUG] Loaded config for {yaml_file}: {config.to_dict()}")
+                
+                # Extract model information using recursive key finding
+                model_name = config.find_key('model_name', 'Unknown Model')
+                model_type = config.find_key('Type', 'Unknown Type')
+                config_path = str(Path(yaml_file).absolute())
+                
+                model_info = {
+                    'name': model_name,
+                    'type': model_type,
+                    'config_path': config_path
+                }
+                print(f"[DEBUG] Created model info: {model_info}")
                     models.append(model_info)
             except Exception as e:
                 print(f"[DEBUG] Error reading {yaml_file}: {e}")

@@ -1,5 +1,4 @@
 import os
-import yaml
 import pickle
 import numpy as np
 import pandas as pd
@@ -7,6 +6,7 @@ import torch
 import torch.nn as nn
 import xgboost as xgb
 from sklearn.preprocessing import MinMaxScaler, StandardScaler
+from Utilities.yaml_utils import YAMLConfig, load_yaml_config
 
 # ####################################################################
 # --- Re-defining Model Architectures ---
@@ -72,14 +72,15 @@ class Backtester:
     def load_artifacts(self):
         """Loads model, scaler, and config from the YAML file."""
         print("--- Loading Artifacts ---")
-        with open(self.config_path, 'r') as f:
-            self.config = yaml.safe_load(f)
+        self.config = load_yaml_config(self.config_path)
         
-        self.model_type = self.config.get('Type')
+        # Use recursive key finding to get model type
+        self.model_type = self.config.find_key('Type')
         print(f"Model Type: {self.model_type}")
 
-        artifact_paths = self.config['artifact_paths']
-        original_config = self.config['Config']
+        # Use recursive key finding to get artifact paths and config
+        artifact_paths = self.config.find_key('artifact_paths')
+        original_config = self.config.find_key('Config')
 
         # Load scaler
         scaler_path = os.path.join(self.model_dir, artifact_paths['scaler'])
