@@ -137,6 +137,14 @@ class Training {
         if (targetParams) {
             targetParams.style.display = 'block';
         }
+        
+        // Special handling for xgboost (it uses 'xgboost' in HTML but 'xgb' in IDs)
+        if (modelType === 'xgboost') {
+            const xgbParams = document.getElementById('xgboost-params');
+            if (xgbParams) {
+                xgbParams.style.display = 'block';
+            }
+        }
     }
 
     handleFileSelection(event) {
@@ -328,6 +336,21 @@ class Training {
                 look_ahead_periods: document.getElementById('xgb-look-ahead').value.split(',').map(x => parseInt(x.trim())),
                 min_tick_change: parseInt(document.getElementById('xgb-min-tick').value)
             };
+        } else if (modelType === 'ppo') {
+            params.model_params = {
+                hidden_dim: parseInt(document.getElementById('ppo-hidden-dim').value),
+                num_actions: parseInt(document.getElementById('ppo-num-actions').value),
+                lookback_window: parseInt(document.getElementById('ppo-lookback-window').value)
+            };
+            params.train_params = {
+                learning_rate: parseFloat(document.getElementById('ppo-learning-rate').value),
+                epochs: parseInt(document.getElementById('ppo-epochs').value),
+                batch_size: parseInt(document.getElementById('ppo-batch-size').value),
+                ppo_epochs: parseInt(document.getElementById('ppo-ppo-epochs').value),
+                clip_ratio: parseFloat(document.getElementById('ppo-clip-ratio').value),
+                value_coef: parseFloat(document.getElementById('ppo-value-coef').value),
+                entropy_coef: parseFloat(document.getElementById('ppo-entropy-coef').value)
+            };
         }
 
         return params;
@@ -363,6 +386,18 @@ class Training {
         document.getElementById('xgb-max-depth').value = 4;
         document.getElementById('xgb-look-ahead').value = '3,5';
         document.getElementById('xgb-min-tick').value = 20;
+
+        // Reset PPO parameters
+        document.getElementById('ppo-hidden-dim').value = 128;
+        document.getElementById('ppo-num-actions').value = 3;
+        document.getElementById('ppo-lookback-window').value = 60;
+        document.getElementById('ppo-learning-rate').value = 0.0003;
+        document.getElementById('ppo-epochs').value = 100;
+        document.getElementById('ppo-batch-size').value = 64;
+        document.getElementById('ppo-ppo-epochs').value = 4;
+        document.getElementById('ppo-clip-ratio').value = 0.2;
+        document.getElementById('ppo-value-coef').value = 0.5;
+        document.getElementById('ppo-entropy-coef').value = 0.01;
 
         this.showSuccess('Parameters reset to default values');
     }
