@@ -37,7 +37,7 @@ class TradingEnvironment(gym.Env):
         
         # Observation space: normalized features + account state
         # Features + balance + position + unrealized_pnl
-        n_features = len(features) + 3  # +3 for balance, position, unrealized_pnl
+        n_features = data.shape[1] + 3  # data features + 3 for balance, position, unrealized_pnl
         self.observation_space = spaces.Box(
             low=-np.inf, high=np.inf, 
             shape=(lookback_window, n_features), 
@@ -250,7 +250,8 @@ class PPOTrainer:
         
         # Get model parameters
         model_params = config.get('model_params', {})
-        self.input_dim = model_params.get('input_dim', 10) + 3  # +3 for account state
+        self.data_input_dim = model_params.get('input_dim', 10)  # Raw data features
+        self.input_dim = self.data_input_dim + 3  # +3 for account state
         self.hidden_dim = model_params.get('hidden_dim', 128)
         self.num_actions = model_params.get('num_actions', 3)
         self.lookback_window = model_params.get('lookback_window', 60)
@@ -266,8 +267,9 @@ class PPOTrainer:
         self.entropy_coef = train_params.get('entropy_coef', 0.01)
         
         # Initialize network
+        # input_dim already includes +3 for account state from the config processing
         self.network = PPONetwork(
-            input_dim=self.input_dim,
+            input_dim=self.input_dim,  # This is already data_features + 3
             hidden_dim=self.hidden_dim,
             num_actions=self.num_actions
         ).to(self.device)
@@ -279,6 +281,7 @@ class PPOTrainer:
         print("Preparing data for PPO training...")
         
         # Scale the data (only the market features, not account state)
+        # The scaler should be fitted on the raw data features only
         scaled_data = self.scaler.fit_transform(data)
         
         # Create environment

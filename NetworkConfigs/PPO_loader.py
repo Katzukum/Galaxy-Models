@@ -76,14 +76,15 @@ class PPOModelLoader:
             
             # Get model parameters from config
             model_params = self.config['Config']['model_params']
-            input_dim = model_params.get('input_dim', len(self.features))
+            data_input_dim = model_params.get('input_dim', len(self.features))  # Raw data features
+            input_dim = data_input_dim + 3  # +3 for account state (balance, position, unrealized_pnl)
             hidden_dim = model_params.get('hidden_dim', 128)
             num_actions = model_params.get('num_actions', 3)
             lookback_window = model_params.get('lookback_window', 60)
             
             # Initialize and load model
             self.model = PPONetwork(
-                input_dim=input_dim + 3,  # +3 for account state (balance, position, unrealized_pnl)
+                input_dim=input_dim,  # Already includes +3 for account state
                 hidden_dim=hidden_dim,
                 num_actions=num_actions
             )
