@@ -438,7 +438,7 @@ def get_available_models():
                     'config_path': config_path
                 }
                 print(f"[DEBUG] Created model info: {model_info}")
-                    models.append(model_info)
+                models.append(model_info)
             except Exception as e:
                 print(f"[DEBUG] Error reading {yaml_file}: {e}")
                 continue
