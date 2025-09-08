@@ -117,33 +117,48 @@ def get_ensemble_training_history():
 @eel.expose
 def get_models():
     """Scan the Models folder for YAML files and return model information"""
+    debug_print("get_models() called from frontend")
+    
     models = []
     models_path = Path("Models")
     
+    debug_print(f"Models path: {models_path}")
+    debug_print(f"Models path exists: {models_path.exists()}")
+    
     if not models_path.exists():
+        debug_print("Models directory does not exist, returning empty list")
         return models
     
     # Find all YAML files recursively in the Models folder
+    debug_print("Finding YAML files...")
     yaml_files = find_yaml_files(str(models_path), recursive=True)
+    debug_print(f"Found {len(yaml_files)} YAML files: {yaml_files}")
     
-    for yaml_file in yaml_files:
+    for i, yaml_file in enumerate(yaml_files):
+        debug_print(f"Processing YAML file {i+1}/{len(yaml_files)}: {yaml_file}")
         try:
             # Use centralized YAML utilities
             config = load_yaml_config(yaml_file)
+            debug_print(f"Loaded config for {yaml_file}")
             
             # Extract model_name and Type using recursive key finding
             model_name = config.find_key('model_name', 'Unknown Model')
             model_type = config.find_key('Type', 'Unknown Type')
+            debug_print(f"Extracted - Name: {model_name}, Type: {model_type}")
             
-            models.append({
+            model_info = {
                 'name': model_name,
                 'type': model_type,
                 'config_path': yaml_file
-            })
+            }
+            models.append(model_info)
+            debug_print(f"Added model: {model_info}")
+            
         except Exception as e:
-            print(f"Error reading {yaml_file}: {e}")
+            debug_print(f"Error reading {yaml_file}: {e}")
             continue
     
+    debug_print(f"Returning {len(models)} models: {models}")
     return models
 
 @eel.expose

@@ -12,12 +12,30 @@ let ensembleTrainingInProgress = false;
 
 // Fallback: Initialize if the ensemble training tab is visible on page load
 document.addEventListener('DOMContentLoaded', function() {
+    console.log('[ENSEMBLE] DOM loaded, checking for ensemble training tab...');
+    
     // Check if ensemble training tab is visible (for direct access)
     const ensembleTab = document.getElementById('ensemble-training-content');
-    if (ensembleTab && ensembleTab.classList.contains('active')) {
-        console.log('Ensemble training tab is active on page load, initializing...');
-        initializeEnsembleTraining();
+    console.log('[ENSEMBLE] Ensemble tab element:', ensembleTab);
+    
+    if (ensembleTab) {
+        console.log('[ENSEMBLE] Ensemble tab found, checking if active...');
+        console.log('[ENSEMBLE] Tab classes:', ensembleTab.classList.toString());
+        console.log('[ENSEMBLE] Is active:', ensembleTab.classList.contains('active'));
+        
+        if (ensembleTab.classList.contains('active')) {
+            console.log('[ENSEMBLE] Ensemble training tab is active on page load, initializing...');
+            initializeEnsembleTraining();
+        } else {
+            console.log('[ENSEMBLE] Ensemble training tab not active on page load');
+        }
+    } else {
+        console.error('[ENSEMBLE] Ensemble training tab element not found!');
     }
+    
+    // Make function globally available
+    window.initializeEnsembleTraining = initializeEnsembleTraining;
+    console.log('[ENSEMBLE] Made initializeEnsembleTraining globally available');
 });
 
 /**
@@ -98,37 +116,52 @@ function setupEnsembleEventListeners() {
  * Load available models from the backend
  */
 async function loadAvailableModels() {
+    console.log('[ENSEMBLE] loadAvailableModels called');
+    
     try {
-        console.log('Loading available models...');
+        console.log('[ENSEMBLE] Starting model loading process...');
         
         // Check if eel is available
+        console.log('[ENSEMBLE] Checking EEL availability...');
+        console.log('[ENSEMBLE] typeof eel:', typeof eel);
+        console.log('[ENSEMBLE] eel object:', eel);
+        
         if (typeof eel === 'undefined') {
-            console.error('EEL is not available');
+            console.error('[ENSEMBLE] EEL is not available');
             showModelSelectionError('EEL connection not available. Please refresh the page.');
             return;
         }
         
         // Check if get_models function exists
+        console.log('[ENSEMBLE] Checking get_models function...');
+        console.log('[ENSEMBLE] typeof eel.get_models:', typeof eel.get_models);
+        console.log('[ENSEMBLE] eel.get_models:', eel.get_models);
+        
         if (typeof eel.get_models !== 'function') {
-            console.error('get_models function not available');
+            console.error('[ENSEMBLE] get_models function not available');
+            console.log('[ENSEMBLE] Available eel functions:', Object.keys(eel));
             showModelSelectionError('get_models function not available. Please check the backend.');
             return;
         }
         
-        console.log('Calling eel.get_models()...');
+        console.log('[ENSEMBLE] Calling eel.get_models()...');
         const models = await eel.get_models()();
-        console.log('Received models:', models);
+        console.log('[ENSEMBLE] Received models:', models);
+        console.log('[ENSEMBLE] Models type:', typeof models);
+        console.log('[ENSEMBLE] Models length:', models ? models.length : 'undefined');
         
         if (models && models.length > 0) {
             availableModels = models;
+            console.log('[ENSEMBLE] Setting availableModels:', availableModels);
             renderModelSelectionList();
-            console.log(`Loaded ${models.length} models`);
+            console.log(`[ENSEMBLE] Loaded ${models.length} models successfully`);
         } else {
-            console.log('No models found');
+            console.log('[ENSEMBLE] No models found or empty array');
             showModelSelectionError('No trained models found. Please train some models first.');
         }
     } catch (error) {
-        console.error('Error loading models:', error);
+        console.error('[ENSEMBLE] Error loading models:', error);
+        console.error('[ENSEMBLE] Error stack:', error.stack);
         showModelSelectionError('Failed to load models: ' + error.message);
     }
 }
@@ -137,13 +170,25 @@ async function loadAvailableModels() {
  * Render the model selection list
  */
 function renderModelSelectionList() {
+    console.log('[ENSEMBLE] renderModelSelectionList called');
+    console.log('[ENSEMBLE] availableModels:', availableModels);
+    console.log('[ENSEMBLE] availableModels.length:', availableModels.length);
+    
     const modelListContainer = document.getElementById('model-selection-list');
-    if (!modelListContainer) return;
+    console.log('[ENSEMBLE] modelListContainer:', modelListContainer);
+    
+    if (!modelListContainer) {
+        console.error('[ENSEMBLE] model-selection-list element not found!');
+        return;
+    }
     
     if (availableModels.length === 0) {
+        console.log('[ENSEMBLE] No models available, showing no-models message');
         modelListContainer.innerHTML = '<div class="no-models">No trained models available</div>';
         return;
     }
+    
+    console.log('[ENSEMBLE] Rendering model selection list with', availableModels.length, 'models');
     
     // Group models by type
     const modelsByType = groupModelsByType(availableModels);
@@ -731,9 +776,16 @@ function initializeEnsembleForm() {
  * Show model selection error
  */
 function showModelSelectionError(message) {
+    console.log('[ENSEMBLE] showModelSelectionError called with message:', message);
+    
     const modelListContainer = document.getElementById('model-selection-list');
+    console.log('[ENSEMBLE] modelListContainer for error:', modelListContainer);
+    
     if (modelListContainer) {
         modelListContainer.innerHTML = `<div class="error-message">${message}</div>`;
+        console.log('[ENSEMBLE] Error message displayed');
+    } else {
+        console.error('[ENSEMBLE] model-selection-list element not found for error display');
     }
 }
 
