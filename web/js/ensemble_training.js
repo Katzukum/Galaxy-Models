@@ -8,9 +8,16 @@ let availableModels = [];
 let selectedModels = [];
 let ensembleTrainingInProgress = false;
 
-// Initialize ensemble training tab when DOM is loaded
+// Note: Ensemble training is initialized when the tab is loaded, not on DOM ready
+
+// Fallback: Initialize if the ensemble training tab is visible on page load
 document.addEventListener('DOMContentLoaded', function() {
-    initializeEnsembleTraining();
+    // Check if ensemble training tab is visible (for direct access)
+    const ensembleTab = document.getElementById('ensemble-training-content');
+    if (ensembleTab && ensembleTab.classList.contains('active')) {
+        console.log('Ensemble training tab is active on page load, initializing...');
+        initializeEnsembleTraining();
+    }
 });
 
 /**
@@ -18,6 +25,15 @@ document.addEventListener('DOMContentLoaded', function() {
  */
 function initializeEnsembleTraining() {
     console.log('Initializing ensemble training...');
+    
+    // Check if we're on the ensemble training tab
+    const ensembleTab = document.getElementById('ensemble-training-content');
+    if (!ensembleTab) {
+        console.error('Ensemble training tab not found');
+        return;
+    }
+    
+    console.log('Ensemble training tab found, initializing...');
     
     // Load available models
     loadAvailableModels();
@@ -27,6 +43,8 @@ function initializeEnsembleTraining() {
     
     // Initialize form
     initializeEnsembleForm();
+    
+    console.log('Ensemble training initialization completed');
 }
 
 /**
@@ -82,18 +100,36 @@ function setupEnsembleEventListeners() {
 async function loadAvailableModels() {
     try {
         console.log('Loading available models...');
+        
+        // Check if eel is available
+        if (typeof eel === 'undefined') {
+            console.error('EEL is not available');
+            showModelSelectionError('EEL connection not available. Please refresh the page.');
+            return;
+        }
+        
+        // Check if get_models function exists
+        if (typeof eel.get_models !== 'function') {
+            console.error('get_models function not available');
+            showModelSelectionError('get_models function not available. Please check the backend.');
+            return;
+        }
+        
+        console.log('Calling eel.get_models()...');
         const models = await eel.get_models()();
+        console.log('Received models:', models);
         
         if (models && models.length > 0) {
             availableModels = models;
             renderModelSelectionList();
             console.log(`Loaded ${models.length} models`);
         } else {
+            console.log('No models found');
             showModelSelectionError('No trained models found. Please train some models first.');
         }
     } catch (error) {
         console.error('Error loading models:', error);
-        showModelSelectionError('Failed to load models. Please try again.');
+        showModelSelectionError('Failed to load models: ' + error.message);
     }
 }
 

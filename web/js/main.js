@@ -55,6 +55,15 @@ class GalaxyModelsApp {
                     Training.loadTraining();
                 }
                 break;
+            case 'ensemble-training':
+                // Initialize ensemble training when tab is loaded
+                if (typeof initializeEnsembleTraining === 'function') {
+                    console.log('Initializing ensemble training...');
+                    initializeEnsembleTraining();
+                } else {
+                    console.error('initializeEnsembleTraining function not found');
+                }
+                break;
             case 'backtesting':
                 if (window.BacktestingTab) {
                     window.BacktestingTab.loadContent();
