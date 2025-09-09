@@ -1,0 +1,595 @@
+/* Ensemble Training Tab Styles */
+
+.ensemble-training-container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 20px;
+}
+
+.ensemble-training-header {
+    text-align: center;
+    margin-bottom: 30px;
+}
+
+.ensemble-training-header h2 {
+    color: #2c3e50;
+    margin-bottom: 10px;
+    font-size: 2.5rem;
+}
+
+.ensemble-training-header p {
+    color: #7f8c8d;
+    font-size: 1.1rem;
+}
+
+/* Ensemble Training Form */
+.ensemble-training-form-card {
+    margin-bottom: 30px;
+}
+
+.ensemble-training-form {
+    display: flex;
+    flex-direction: column;
+    gap: 25px;
+}
+
+/* Model Selection Container */
+.model-selection-container {
+    border: 2px solid #e1e8ed;
+    border-radius: 8px;
+    padding: 20px;
+    background: #f8f9fa;
+}
+
+.model-selection-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+    padding-bottom: 15px;
+    border-bottom: 1px solid #dee2e6;
+}
+
+.model-selection-header span {
+    font-weight: 600;
+    color: #495057;
+    font-size: 1.1rem;
+}
+
+.model-selection-header .btn-secondary {
+    padding: 8px 16px;
+    font-size: 0.9rem;
+    margin-left: 10px;
+}
+
+.model-selection-list {
+    max-height: 400px;
+    overflow-y: auto;
+    border: 1px solid #dee2e6;
+    border-radius: 6px;
+    background: white;
+}
+
+/* Model Type Groups */
+.model-type-group {
+    border-bottom: 1px solid #e9ecef;
+}
+
+.model-type-group:last-child {
+    border-bottom: none;
+}
+
+.model-type-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 15px 20px;
+    background: #f1f3f4;
+    border-bottom: 1px solid #dee2e6;
+}
+
+.model-type-header h4 {
+    margin: 0;
+    color: #495057;
+    font-size: 1rem;
+    font-weight: 600;
+}
+
+.model-count {
+    background: #007bff;
+    color: white;
+    padding: 4px 8px;
+    border-radius: 12px;
+    font-size: 0.8rem;
+    font-weight: 500;
+}
+
+.model-type-models {
+    padding: 10px 0;
+}
+
+/* Model Items */
+.model-item {
+    padding: 12px 20px;
+    border-bottom: 1px solid #f1f3f4;
+    transition: background-color 0.2s ease;
+}
+
+.model-item:last-child {
+    border-bottom: none;
+}
+
+.model-item:hover {
+    background-color: #f8f9fa;
+}
+
+.model-item.selected {
+    background-color: #e3f2fd;
+    border-left: 4px solid #2196f3;
+}
+
+.model-checkbox-label {
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+    margin: 0;
+    width: 100%;
+}
+
+.model-checkbox {
+    margin-right: 12px;
+    transform: scale(1.2);
+}
+
+.model-info {
+    flex: 1;
+}
+
+.model-name {
+    font-weight: 600;
+    color: #2c3e50;
+    margin-bottom: 4px;
+}
+
+.model-type {
+    font-size: 0.9rem;
+    color: #6c757d;
+}
+
+/* Weight Configuration */
+.weight-config {
+    background: #f8f9fa;
+    border: 1px solid #dee2e6;
+    border-radius: 6px;
+    padding: 20px;
+}
+
+.weight-inputs-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 15px;
+    margin-bottom: 15px;
+}
+
+.weight-input-group {
+    display: flex;
+    flex-direction: column;
+}
+
+.weight-input-group label {
+    font-weight: 600;
+    color: #495057;
+    margin-bottom: 5px;
+    font-size: 0.9rem;
+}
+
+.weight-input {
+    padding: 8px 12px;
+    border: 1px solid #ced4da;
+    border-radius: 4px;
+    font-size: 0.9rem;
+}
+
+.weight-input:focus {
+    outline: none;
+    border-color: #007bff;
+    box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.25);
+}
+
+.weight-validation {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 15px;
+    background: #e9ecef;
+    border-radius: 4px;
+    font-size: 0.9rem;
+}
+
+.weight-status.valid {
+    color: #28a745;
+    font-weight: 600;
+}
+
+.weight-status.invalid {
+    color: #dc3545;
+    font-weight: 600;
+}
+
+/* Advanced Options Panel */
+.advanced-options-panel {
+    background: #f8f9fa;
+    border: 1px solid #dee2e6;
+    border-radius: 6px;
+    padding: 20px;
+    margin-top: 15px;
+}
+
+.advanced-options-panel h4 {
+    margin: 0 0 20px 0;
+    color: #495057;
+    font-size: 1.1rem;
+}
+
+/* Meta-learner Configuration */
+.meta-learner-config {
+    background: #e3f2fd;
+    border: 1px solid #bbdefb;
+    border-radius: 4px;
+    padding: 15px;
+    margin-top: 10px;
+}
+
+/* Form Help Text */
+.form-help {
+    margin-top: 8px;
+}
+
+.form-help .help-text {
+    font-size: 0.9rem;
+    color: #6c757d;
+    font-style: italic;
+}
+
+/* Error Messages */
+.error-message {
+    color: #dc3545;
+    background: #f8d7da;
+    border: 1px solid #f5c6cb;
+    border-radius: 4px;
+    padding: 15px;
+    text-align: center;
+    font-weight: 500;
+}
+
+.no-models {
+    color: #6c757d;
+    text-align: center;
+    padding: 20px;
+    font-style: italic;
+}
+
+.no-history {
+    color: #6c757d;
+    text-align: center;
+    padding: 40px 20px;
+    font-style: italic;
+}
+
+/* Training Progress */
+.training-progress-card {
+    margin-bottom: 30px;
+}
+
+.progress-container {
+    margin-bottom: 20px;
+}
+
+.progress-bar {
+    width: 100%;
+    height: 20px;
+    background: #e9ecef;
+    border-radius: 10px;
+    overflow: hidden;
+    margin-bottom: 10px;
+}
+
+.progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #007bff, #0056b3);
+    transition: width 0.3s ease;
+    border-radius: 10px;
+}
+
+.progress-text {
+    text-align: center;
+    font-weight: 600;
+    color: #495057;
+    font-size: 1.1rem;
+}
+
+.training-status {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 15px;
+    margin-bottom: 20px;
+}
+
+.status-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 15px;
+    background: #f8f9fa;
+    border-radius: 6px;
+    border-left: 4px solid #007bff;
+}
+
+.status-label {
+    font-weight: 600;
+    color: #495057;
+}
+
+.status-value {
+    color: #2c3e50;
+    font-weight: 500;
+}
+
+/* Training Logs */
+.training-logs h4 {
+    margin: 0 0 15px 0;
+    color: #495057;
+}
+
+.logs-container {
+    max-height: 300px;
+    overflow-y: auto;
+    background: #f8f9fa;
+    border: 1px solid #dee2e6;
+    border-radius: 4px;
+    padding: 15px;
+}
+
+.log-entry {
+    padding: 8px 0;
+    border-bottom: 1px solid #e9ecef;
+    font-family: 'Courier New', monospace;
+    font-size: 0.9rem;
+}
+
+.log-entry:last-child {
+    border-bottom: none;
+}
+
+.log-timestamp {
+    color: #6c757d;
+    margin-right: 10px;
+}
+
+.log-message {
+    color: #495057;
+}
+
+/* Training History */
+.training-history-card {
+    margin-bottom: 30px;
+}
+
+.training-history-list {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+}
+
+.training-history-item {
+    background: white;
+    border: 1px solid #dee2e6;
+    border-radius: 8px;
+    padding: 20px;
+    transition: box-shadow 0.2s ease;
+}
+
+.training-history-item:hover {
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.history-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 15px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid #e9ecef;
+}
+
+.history-header h4 {
+    margin: 0;
+    color: #2c3e50;
+    font-size: 1.2rem;
+}
+
+.history-status {
+    padding: 4px 12px;
+    border-radius: 12px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.history-status.completed {
+    background: #d4edda;
+    color: #155724;
+}
+
+.history-status.failed {
+    background: #f8d7da;
+    color: #721c24;
+}
+
+.history-status.running {
+    background: #d1ecf1;
+    color: #0c5460;
+}
+
+.history-details {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.history-info {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.history-info span {
+    font-size: 0.9rem;
+    color: #6c757d;
+}
+
+.history-actions {
+    display: flex;
+    gap: 10px;
+}
+
+.history-actions .btn-secondary {
+    padding: 6px 12px;
+    font-size: 0.8rem;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+    .ensemble-training-container {
+        padding: 15px;
+    }
+    
+    .ensemble-training-header h2 {
+        font-size: 2rem;
+    }
+    
+    .model-selection-header {
+        flex-direction: column;
+        gap: 10px;
+        align-items: stretch;
+    }
+    
+    .model-selection-header .btn-secondary {
+        margin: 0;
+    }
+    
+    .weight-inputs-grid {
+        grid-template-columns: 1fr;
+    }
+    
+    .training-status {
+        grid-template-columns: 1fr;
+    }
+    
+    .history-details {
+        flex-direction: column;
+        gap: 15px;
+        align-items: stretch;
+    }
+    
+    .history-actions {
+        justify-content: center;
+    }
+}
+
+/* Loading States */
+.loading {
+    text-align: center;
+    color: #6c757d;
+    padding: 20px;
+    font-style: italic;
+}
+
+/* Button States */
+.btn-primary:disabled {
+    background: #6c757d;
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+
+.btn-primary:disabled:hover {
+    background: #6c757d;
+    transform: none;
+}
+
+/* Checkbox Styling */
+.checkbox-label {
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+    user-select: none;
+}
+
+.checkbox-label input[type="checkbox"] {
+    display: none;
+}
+
+.checkmark {
+    width: 20px;
+    height: 20px;
+    border: 2px solid #ced4da;
+    border-radius: 4px;
+    margin-right: 12px;
+    position: relative;
+    transition: all 0.2s ease;
+}
+
+.checkbox-label input[type="checkbox"]:checked + .checkmark {
+    background: #007bff;
+    border-color: #007bff;
+}
+
+.checkbox-label input[type="checkbox"]:checked + .checkmark::after {
+    content: '✓';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    color: white;
+    font-weight: bold;
+    font-size: 12px;
+}
+
+/* Animation for model selection */
+.model-item {
+    animation: fadeIn 0.3s ease;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Scrollbar Styling */
+.model-selection-list::-webkit-scrollbar,
+.logs-container::-webkit-scrollbar {
+    width: 8px;
+}
+
+.model-selection-list::-webkit-scrollbar-track,
+.logs-container::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 4px;
+}
+
+.model-selection-list::-webkit-scrollbar-thumb,
+.logs-container::-webkit-scrollbar-thumb {
+    background: #c1c1c1;
+    border-radius: 4px;
+}
+
+.model-selection-list::-webkit-scrollbar-thumb:hover,
+.logs-container::-webkit-scrollbar-thumb:hover {
+    background: #a8a8a8;
+}

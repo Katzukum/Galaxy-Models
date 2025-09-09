@@ -9,9 +9,22 @@ import json
 import requests
 from pathlib import Path
 from datetime import datetime
+from Utilities.yaml_utils import YAMLConfig, load_yaml_config, find_yaml_files, get_common_config_values
+from NetworkConfigs.EnsembleTrainer import run_ensemble_training
 
 # Initialize EEL
 eel.init('web')
+
+# Debug configuration
+DEBUG_TRAINING = True  # Set to True to open command windows for training subprocesses
+DEBUG_API = True       # Set to True to open command windows for API subprocesses
+DEBUG_VERBOSE = True   # Set to True for additional debug output
+
+# Debug helper function
+def debug_print(message):
+    """Print debug messages if DEBUG_VERBOSE is enabled"""
+    if DEBUG_VERBOSE:
+        print(f"[DEBUG] {message}")
 
 # Global variables for training management
 training_processes = {}
@@ -19,44 +32,159 @@ training_logs = {}
 training_status = {}
 
 @eel.expose
+def get_debug_status():
+    """Get current debug configuration status"""
+    return {
+        'debug_training': DEBUG_TRAINING,
+        'debug_api': DEBUG_API,
+        'debug_verbose': DEBUG_VERBOSE
+    }
+
+@eel.expose
+def set_debug_training(enabled):
+    """Enable or disable debug mode for training processes"""
+    global DEBUG_TRAINING
+    DEBUG_TRAINING = enabled
+    debug_print(f"Debug training mode: {'enabled' if enabled else 'disabled'}")
+    return {'success': True, 'debug_training': DEBUG_TRAINING}
+
+@eel.expose
+def set_debug_api(enabled):
+    """Enable or disable debug mode for API processes"""
+    global DEBUG_API
+    DEBUG_API = enabled
+    debug_print(f"Debug API mode: {'enabled' if enabled else 'disabled'}")
+    return {'success': True, 'debug_api': DEBUG_API}
+
+@eel.expose
+def set_debug_verbose(enabled):
+    """Enable or disable verbose debug output"""
+    global DEBUG_VERBOSE
+    DEBUG_VERBOSE = enabled
+    debug_print(f"Debug verbose mode: {'enabled' if enabled else 'disabled'}")
+    return {'success': True, 'debug_verbose': DEBUG_VERBOSE}
+
+@eel.expose
+def start_ensemble_training(ensemble_type, ensemble_name, selected_models, csv_path, weights=None, advanced_options=None):
+    """Start ensemble training process"""
+    try:
+        debug_print(f"Starting ensemble training: {ensemble_name}")
+        debug_print(f"Ensemble type: {ensemble_type}")
+        debug_print(f"Selected models: {len(selected_models)}")
+        debug_print(f"CSV path: {csv_path}")
+        
+        # Generate training ID
+        training_id = f"ensemble_{int(time.time())}"
+        
+        # Start training in background thread
+        training_thread = threading.Thread(
+            target=run_ensemble_training_thread,
+            args=(training_id, ensemble_type, ensemble_name, selected_models, csv_path, weights, advanced_options)
+        )
+        training_thread.daemon = True
+        training_thread.start()
+        
+        return training_id
+        
+    except Exception as e:
+        debug_print(f"Error starting ensemble training: {e}")
+        raise e
+
+def run_ensemble_training_thread(training_id, ensemble_type, ensemble_name, selected_models, csv_path, weights, advanced_options):
+    """Run ensemble training in background thread"""
+    try:
+        debug_print(f"Starting ensemble training thread: {training_id}")
+        debug_print(f"CSV path received: {csv_path}")
+        
+        # Validate CSV file exists
+        if not csv_path or not os.path.exists(csv_path):
+            debug_print(f"CSV file not found: {csv_path}")
+            return
+        
+        # Call the actual ensemble training function
+        success = run_ensemble_training(
+            ensemble_name=ensemble_name,
+            ensemble_type=ensemble_type,
+            selected_models=selected_models,
+            csv_path=csv_path,
+            weights=weights,
+            advanced_options=advanced_options,
+            output_dir="Models"
+        )
+        
+        if success:
+            debug_print(f"Ensemble training completed successfully: {training_id}")
+        else:
+            debug_print(f"Ensemble training failed: {training_id}")
+            
+    except Exception as e:
+        debug_print(f"Ensemble training thread error: {e}")
+
+@eel.expose
+def get_ensemble_training_history():
+    """Get ensemble training history"""
+    try:
+        # This would load from a database or file system
+        # For now, return empty list
+        return []
+    except Exception as e:
+        debug_print(f"Error getting ensemble training history: {e}")
+        return []
+
+@eel.expose
 def get_models():
     """Scan the Models folder for YAML files and return model information"""
+    debug_print("get_models() called from frontend")
+    
     models = []
     models_path = Path("Models")
     
+    debug_print(f"Models path: {models_path}")
+    debug_print(f"Models path exists: {models_path.exists()}")
+    
     if not models_path.exists():
+        debug_print("Models directory does not exist, returning empty list")
         return models
     
     # Find all YAML files recursively in the Models folder
-    yaml_files = glob.glob(str(models_path / "**" / "*.yaml"), recursive=True)
+    debug_print("Finding YAML files...")
+    yaml_files = find_yaml_files(str(models_path), recursive=True)
+    debug_print(f"Found {len(yaml_files)} YAML files: {yaml_files}")
     
-    for yaml_file in yaml_files:
+    for i, yaml_file in enumerate(yaml_files):
+        debug_print(f"Processing YAML file {i+1}/{len(yaml_files)}: {yaml_file}")
         try:
-            with open(yaml_file, 'r') as file:
-                config = yaml.safe_load(file)
-                
-                # Extract model_name and Type from the YAML
-                model_name = config.get('model_name', 'Unknown Model')
-                model_type = config.get('Type', 'Unknown Type')
-                
-                models.append({
-                    'name': model_name,
-                    'type': model_type,
-                    'config_path': yaml_file
-                })
+            # Use centralized YAML utilities
+            config = load_yaml_config(yaml_file)
+            debug_print(f"Loaded config for {yaml_file}")
+            
+            # Extract model_name and Type using recursive key finding
+            model_name = config.find_key('model_name', 'Unknown Model')
+            model_type = config.find_key('Type', 'Unknown Type')
+            debug_print(f"Extracted - Name: {model_name}, Type: {model_type}")
+            
+            model_info = {
+                'name': model_name,
+                'type': model_type,
+                'config_path': yaml_file
+            }
+            models.append(model_info)
+            debug_print(f"Added model: {model_info}")
+            
         except Exception as e:
-            print(f"Error reading {yaml_file}: {e}")
+            debug_print(f"Error reading {yaml_file}: {e}")
             continue
     
+    debug_print(f"Returning {len(models)} models: {models}")
     return models
 
 @eel.expose
 def get_model_details(config_path):
     """Get detailed information about a specific model"""
     try:
-        with open(config_path, 'r') as file:
-            config = yaml.safe_load(file)
-            return config
+        # Use centralized YAML utilities
+        config = load_yaml_config(config_path)
+        return config.to_dict()
     except Exception as e:
         return {'error': str(e)}
 
@@ -68,7 +196,7 @@ def start_training(model_type, csv_path, training_id=None, model_name=None, trai
             training_id = f"training_{int(time.time())}"
         
         # Validate model type
-        valid_models = ['transformer', 'nn', 'xgboost']
+        valid_models = ['transformer', 'nn', 'xgboost', 'ppo']
         if model_type not in valid_models:
             return {'error': f'Invalid model type. Must be one of: {valid_models}'}
         
@@ -140,53 +268,97 @@ def run_training_process(training_id, model_type, csv_path, model_name, training
             cmd.extend(['--training_params', params_json])
         
         # Start the training process
-        process = subprocess.Popen(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            universal_newlines=True,
-            bufsize=1,
-            cwd=project_root  # Set working directory to project root
-        )
+        debug_print(f"Starting {model_type} training for model: {model_name}")
+        debug_print(f"Command: {' '.join(cmd)}")
+        debug_print(f"Working directory: {project_root}")
+        
+        if DEBUG_TRAINING:
+            # Debug mode: Open command window to show training output
+            debug_print("Opening command window for training process")
+            if os.name == 'nt':
+                # Windows: Use CREATE_NEW_CONSOLE and don't capture output
+                process = subprocess.Popen(
+                    cmd,
+                    cwd=project_root,
+                    creationflags=subprocess.CREATE_NEW_CONSOLE
+                )
+            else:
+                # Linux/macOS: Use xterm or gnome-terminal if available
+                try:
+                    # Try to open in a new terminal window
+                    terminal_cmd = ['gnome-terminal', '--', 'bash', '-c', f"cd {project_root} && {' '.join(cmd)}; read -p 'Press Enter to close...'"]
+                    process = subprocess.Popen(terminal_cmd)
+                except:
+                    # Fallback: just run normally but don't capture output
+                    process = subprocess.Popen(
+                        cmd,
+                        cwd=project_root
+                    )
+        else:
+            # Normal mode: Capture output for web interface
+            debug_print("Running training in background mode")
+            process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                universal_newlines=True,
+                bufsize=1,
+                cwd=project_root
+            )
         
         training_processes[training_id] = process
         
-        # Read output line by line
-        for line in iter(process.stdout.readline, ''):
-            if line:
-                training_logs[training_id].append({
-                    'timestamp': datetime.now().isoformat(),
-                    'message': line.strip()
-                })
-                
-                # Update progress based on keywords in output
-                if 'epoch' in line.lower() and 'loss' in line.lower():
-                    # Extract epoch number for progress calculation
-                    try:
-                        epoch_part = line.split('epoch')[1].split('/')[0].strip()
-                        if epoch_part.isdigit():
-                            epoch = int(epoch_part)
-                            # Assume 25 epochs for transformer, 100 for nn, 150 for xgboost
-                            max_epochs = 25 if model_type == 'transformer' else (100 if model_type == 'nn' else 150)
-                            progress = min(90, (epoch / max_epochs) * 90)  # Cap at 90% until completion
-                            training_status[training_id]['progress'] = progress
-                    except:
-                        pass
+        debug_print(f"Training process started with PID: {process.pid}")
+        if DEBUG_TRAINING:
+            debug_print("Command window opened - check for new console window")
+            debug_print("Training output will be visible in the command window")
+            debug_print("Note: Output is not captured in debug mode - check the command window")
+        
+        if DEBUG_TRAINING:
+            # In debug mode, don't read output - just wait for process to complete
+            debug_print("Waiting for training process to complete...")
+        else:
+            # Read output line by line only in normal mode
+            for line in iter(process.stdout.readline, ''):
+                if line:
+                    training_logs[training_id].append({
+                        'timestamp': datetime.now().isoformat(),
+                        'message': line.strip()
+                    })
+                    
+                    # Update progress based on keywords in output
+                    if 'epoch' in line.lower() and 'loss' in line.lower():
+                        # Extract epoch number for progress calculation
+                        try:
+                            epoch_part = line.split('epoch')[1].split('/')[0].strip()
+                            if epoch_part.isdigit():
+                                epoch = int(epoch_part)
+                                # Assume 25 epochs for transformer, 100 for nn, 150 for xgboost
+                                max_epochs = 25 if model_type == 'transformer' else (100 if model_type == 'nn' else 150)
+                                progress = min(90, (epoch / max_epochs) * 90)  # Cap at 90% until completion
+                                training_status[training_id]['progress'] = progress
+                        except:
+                            pass
         
         # Wait for process to complete
         return_code = process.wait()
+        
+        debug_print(f"Training process completed with return code: {return_code}")
         
         if return_code == 0:
             training_status[training_id]['status'] = 'completed'
             training_status[training_id]['progress'] = 100
             training_status[training_id]['message'] = 'Training completed successfully'
             training_status[training_id]['end_time'] = datetime.now().isoformat()
+            debug_print("Training completed successfully")
         else:
             training_status[training_id]['status'] = 'failed'
             training_status[training_id]['message'] = f'Training failed with return code: {return_code}'
             training_status[training_id]['end_time'] = datetime.now().isoformat()
+            debug_print(f"Training failed with return code: {return_code}")
             
     except Exception as e:
+        debug_print(f"Training error occurred: {str(e)}")
         training_status[training_id]['status'] = 'error'
         training_status[training_id]['message'] = f'Training error: {str(e)}'
         training_status[training_id]['end_time'] = datetime.now().isoformat()
@@ -277,28 +449,28 @@ def get_available_models():
             return models
         
         # Find all YAML files recursively in the Models folder
-        yaml_files = glob.glob(str(models_path / "**" / "*.yaml"), recursive=True)
+        yaml_files = find_yaml_files(str(models_path), recursive=True)
         print(f"[DEBUG] Found {len(yaml_files)} YAML files: {yaml_files}")
         
         for i, yaml_file in enumerate(yaml_files):
             print(f"[DEBUG] Processing YAML file {i+1}/{len(yaml_files)}: {yaml_file}")
             try:
-                with open(yaml_file, 'r') as file:
-                    config = yaml.safe_load(file)
-                    print(f"[DEBUG] Loaded config for {yaml_file}: {config}")
-                    
-                    # Extract model information
-                    model_name = config.get('model_name', 'Unknown Model')
-                    model_type = config.get('Type', 'Unknown Type')
-                    config_path = str(Path(yaml_file).absolute())
-                    
-                    model_info = {
-                        'name': model_name,
-                        'type': model_type,
-                        'config_path': config_path
-                    }
-                    print(f"[DEBUG] Created model info: {model_info}")
-                    models.append(model_info)
+                # Use centralized YAML utilities
+                config = load_yaml_config(yaml_file)
+                print(f"[DEBUG] Loaded config for {yaml_file}: {config.to_dict()}")
+                
+                # Extract model information using recursive key finding
+                model_name = config.find_key('model_name', 'Unknown Model')
+                model_type = config.find_key('Type', 'Unknown Type')
+                config_path = str(Path(yaml_file).absolute())
+                
+                model_info = {
+                    'name': model_name,
+                    'type': model_type,
+                    'config_path': config_path
+                }
+                print(f"[DEBUG] Created model info: {model_info}")
+                models.append(model_info)
             except Exception as e:
                 print(f"[DEBUG] Error reading {yaml_file}: {e}")
                 continue
@@ -460,34 +632,71 @@ def start_api_server(config):
         print(f"  - MODEL_DIR: {env['MODEL_DIR']}")
         print(f"  - Original MODEL_DIR: {os.environ.get('MODEL_DIR', 'Not set')}")
         
-        print("[DEBUG] Starting subprocess...")
-        api_process = subprocess.Popen(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            universal_newlines=True,
-            bufsize=1,
-            cwd=project_root,  # Set working directory to project root
-            env=env  # Pass environment variables
-        )
+        debug_print("Starting API server subprocess...")
+        if DEBUG_API:
+            # Debug mode: Open command window to show API server output
+            debug_print(f"Opening command window for API server: {' '.join(cmd)}")
+            if os.name == 'nt':
+                # Windows: Use CREATE_NEW_CONSOLE and don't capture output
+                api_process = subprocess.Popen(
+                    cmd,
+                    cwd=project_root,
+                    env=env,
+                    creationflags=subprocess.CREATE_NEW_CONSOLE
+                )
+            else:
+                # Linux/macOS: Use xterm or gnome-terminal if available
+                try:
+                    # Try to open in a new terminal window
+                    terminal_cmd = ['gnome-terminal', '--', 'bash', '-c', f"cd {project_root} && {' '.join(cmd)}; read -p 'Press Enter to close...'"]
+                    api_process = subprocess.Popen(terminal_cmd)
+                except:
+                    # Fallback: just run normally but don't capture output
+                    api_process = subprocess.Popen(
+                        cmd,
+                        cwd=project_root,
+                        env=env
+                    )
+        else:
+            # Normal mode: Capture output for web interface
+            debug_print("Running API server in background mode")
+            api_process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                universal_newlines=True,
+                bufsize=1,
+                cwd=project_root,
+                env=env
+            )
         
         api_logs.append(f"[{datetime.now().strftime('%H:%M:%S')}] Process started with PID: {api_process.pid}")
         
-        # Start a thread to read the output
-        def read_output():
-            try:
-                for line in iter(api_process.stdout.readline, ''):
-                    if line:
-                        api_logs.append(f"[{datetime.now().strftime('%H:%M:%S')}] {line.strip()}")
-                        # Keep only last 100 log entries
-                        if len(api_logs) > 100:
-                            api_logs.pop(0)
-            except Exception as e:
-                api_logs.append(f"[{datetime.now().strftime('%H:%M:%S')}] Error reading output: {str(e)}")
+        debug_print(f"API server process started with PID: {api_process.pid}")
+        if DEBUG_API:
+            debug_print("Command window opened for API server - check for new console window")
+            debug_print("API server output will be visible in the command window")
+            debug_print("Note: Output is not captured in debug mode - check the command window")
         
-        output_thread = threading.Thread(target=read_output)
-        output_thread.daemon = True
-        output_thread.start()
+        if DEBUG_API:
+            # In debug mode, don't read output - just start the process
+            debug_print("API server running in debug mode - output visible in command window")
+        else:
+            # Start a thread to read the output only in normal mode
+            def read_output():
+                try:
+                    for line in iter(api_process.stdout.readline, ''):
+                        if line:
+                            api_logs.append(f"[{datetime.now().strftime('%H:%M:%S')}] {line.strip()}")
+                            # Keep only last 100 log entries
+                            if len(api_logs) > 100:
+                                api_logs.pop(0)
+                except Exception as e:
+                    api_logs.append(f"[{datetime.now().strftime('%H:%M:%S')}] Error reading output: {str(e)}")
+            
+            output_thread = threading.Thread(target=read_output)
+            output_thread.daemon = True
+            output_thread.start()
         
         # Give the process a moment to start and check if it's still running
         import time

@@ -11,6 +11,7 @@
     <!-- Tab-specific CSS -->
     <link rel="stylesheet" href="tabs/model-library/model-library.css">
     <link rel="stylesheet" href="tabs/training/training.css">
+    <link rel="stylesheet" href="tabs/ensemble_training/ensemble_training.css">
     <link rel="stylesheet" href="tabs/backtesting/backtesting.css">
     <link rel="stylesheet" href="tabs/api-hosting/api-hosting.css">
     
@@ -32,6 +33,9 @@
             </button>
             <button class="tab-button" data-tab="training">
                 🚀 Training
+            </button>
+            <button class="tab-button" data-tab="ensemble-training">
+                🎯 Ensemble Training
             </button>
             <button class="tab-button" data-tab="backtesting">
                 📊 Backtesting
@@ -76,9 +80,10 @@
                                 <label for="model-type">Model Type</label>
                                 <select id="model-type" name="model-type" required>
                                     <option value="">Select a model type...</option>
-                                    <option value="transformer">🔄 Transformer (Time-series Forecasting)</option>
-                                    <option value="nn">🧠 Neural Network (Price Change Regression)</option>
-                                    <option value="xgboost">🌳 XGBoost (Action Classification)</option>
+                        <option value="transformer">🔄 Transformer (Time-series Forecasting)</option>
+                        <option value="nn">🧠 Neural Network (Price Change Regression)</option>
+                        <option value="xgboost">🌳 XGBoost (Action Classification)</option>
+                        <option value="ppo">🤖 PPO Agent (Reinforcement Learning)</option>
                                 </select>
                                 <div class="form-help">
                                     <span class="help-text" data-model="transformer" style="display: none;">
@@ -89,6 +94,9 @@
                                     </span>
                                     <span class="help-text" data-model="xgboost" style="display: none;">
                                         XGBoost classifier for 5-class action classification
+                                    </span>
+                                    <span class="help-text" data-model="ppo" style="display: none;">
+                                        PPO reinforcement learning agent for trading decisions
                                     </span>
                                 </div>
                             </div>
@@ -265,6 +273,55 @@
                                             </div>
                                         </div>
                                     </div>
+
+                                    <!-- PPO Parameters -->
+                                    <div id="ppo-params" class="model-params" style="display: none;">
+                                        <h4>🤖 PPO Agent Parameters</h4>
+                                        <div class="params-grid">
+                                            <div class="param-group">
+                                                <label for="ppo-hidden-dim">Hidden Dimension</label>
+                                                <input type="number" id="ppo-hidden-dim" value="128" min="64" max="512">
+                                            </div>
+                                            <div class="param-group">
+                                                <label for="ppo-num-actions">Number of Actions</label>
+                                                <input type="number" id="ppo-num-actions" value="3" min="2" max="5" readonly>
+                                                <small>Hold (0), Buy (1), Sell (2)</small>
+                                            </div>
+                                            <div class="param-group">
+                                                <label for="ppo-lookback-window">Lookback Window</label>
+                                                <input type="number" id="ppo-lookback-window" value="60" min="20" max="200">
+                                            </div>
+                                            <div class="param-group">
+                                                <label for="ppo-learning-rate">Learning Rate</label>
+                                                <input type="number" id="ppo-learning-rate" value="0.0003" min="0.0001" max="0.01" step="0.0001">
+                                            </div>
+                                            <div class="param-group">
+                                                <label for="ppo-epochs">Training Epochs</label>
+                                                <input type="number" id="ppo-epochs" value="100" min="10" max="500">
+                                            </div>
+                                            <div class="param-group">
+                                                <label for="ppo-batch-size">Batch Size</label>
+                                                <input type="number" id="ppo-batch-size" value="64" min="16" max="256">
+                                            </div>
+                                            <div class="param-group">
+                                                <label for="ppo-ppo-epochs">PPO Epochs</label>
+                                                <input type="number" id="ppo-ppo-epochs" value="4" min="1" max="10">
+                                                <small>PPO updates per training iteration</small>
+                                            </div>
+                                            <div class="param-group">
+                                                <label for="ppo-clip-ratio">Clip Ratio</label>
+                                                <input type="number" id="ppo-clip-ratio" value="0.2" min="0.1" max="0.5" step="0.05">
+                                            </div>
+                                            <div class="param-group">
+                                                <label for="ppo-value-coef">Value Coefficient</label>
+                                                <input type="number" id="ppo-value-coef" value="0.5" min="0.1" max="1.0" step="0.1">
+                                            </div>
+                                            <div class="param-group">
+                                                <label for="ppo-entropy-coef">Entropy Coefficient</label>
+                                                <input type="number" id="ppo-entropy-coef" value="0.01" min="0.001" max="0.1" step="0.001">
+                                            </div>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
 
@@ -367,6 +424,211 @@
                 </div>
             </div>
 
+            <!-- Ensemble Training Tab -->
+            <div class="tab-content" id="ensemble-training-content">
+                <div class="ensemble-training-container">
+                    <!-- Ensemble Training Header -->
+                    <div class="ensemble-training-header">
+                        <h2>🎯 Ensemble Model Training</h2>
+                        <p>Combine multiple trained models to create powerful ensemble predictions</p>
+                    </div>
+
+                    <!-- Ensemble Training Form -->
+                    <div class="card ensemble-training-form-card">
+                        <h3>📋 Ensemble Configuration</h3>
+                        
+                        <form id="ensemble-training-form" class="ensemble-training-form">
+                            <!-- Ensemble Type Selection -->
+                            <div class="form-group">
+                                <label for="ensemble-type">Ensemble Type</label>
+                                <select id="ensemble-type" name="ensemble-type" required>
+                                    <option value="">Select an ensemble type...</option>
+                                    <option value="voting">🗳️ Voting Ensemble (Majority Vote)</option>
+                                    <option value="averaging">📊 Averaging Ensemble (Mean Prediction)</option>
+                                    <option value="weighted">⚖️ Weighted Ensemble (Custom Weights)</option>
+                                    <option value="stacking">🏗️ Stacking Ensemble (Meta-Learning)</option>
+                                </select>
+                                <div class="form-help">
+                                    <span class="help-text" data-ensemble="voting" style="display: none;">
+                                        Majority vote from selected models for classification tasks
+                                    </span>
+                                    <span class="help-text" data-ensemble="averaging" style="display: none;">
+                                        Average predictions from selected models for regression tasks
+                                    </span>
+                                    <span class="help-text" data-ensemble="weighted" style="display: none;">
+                                        Weighted combination of model predictions with custom weights
+                                    </span>
+                                    <span class="help-text" data-ensemble="stacking" style="display: none;">
+                                        Meta-learning approach using a second-level model to combine predictions
+                                    </span>
+                                </div>
+                            </div>
+
+                            <!-- Model Selection -->
+                            <div class="form-group">
+                                <label for="ensemble-models">Select Models</label>
+                                <div class="model-selection-container">
+                                    <div class="model-selection-header">
+                                        <span>Available Models</span>
+                                        <button type="button" id="select-all-models" class="btn-secondary">Select All</button>
+                                        <button type="button" id="clear-selection" class="btn-secondary">Clear</button>
+                                    </div>
+                                    <div id="model-selection-list" class="model-selection-list">
+                                        <div class="loading">Loading models...</div>
+                                    </div>
+                                </div>
+                                <div class="form-help">
+                                    <span>Select 2 or more models to create an ensemble. Models must be of compatible types.</span>
+                                </div>
+                            </div>
+
+                            <!-- Weight Configuration (for weighted ensemble) -->
+                            <div id="weight-config" class="form-group" style="display: none;">
+                                <label>Model Weights</label>
+                                <div id="weight-inputs" class="weight-inputs">
+                                    <!-- Weight inputs will be dynamically generated -->
+                                </div>
+                                <div class="form-help">
+                                    <span>Set weights for each model. Weights should sum to 1.0</span>
+                                </div>
+                            </div>
+
+                            <!-- CSV File Selection -->
+                            <div class="form-group">
+                                <label for="ensemble-csv-file">Training Data</label>
+                                <div class="file-input-container">
+                                    <input type="file" id="ensemble-csv-file" name="ensemble-csv-file" accept=".csv" required>
+                                    <div class="file-input-display">
+                                        <span class="file-input-text">Choose CSV file or drag & drop</span>
+                                        <span class="file-input-icon">📁</span>
+                                    </div>
+                                </div>
+                                <div class="form-help">
+                                    <span>Upload CSV file with features for ensemble training</span>
+                                </div>
+                            </div>
+
+                            <!-- Ensemble Name -->
+                            <div class="form-group">
+                                <label for="ensemble-name">Ensemble Name</label>
+                                <input type="text" id="ensemble-name" name="ensemble-name" 
+                                       placeholder="e.g., my_ensemble_model" required>
+                                <div class="form-help">
+                                    <span>Choose a unique name for your ensemble model</span>
+                                </div>
+                            </div>
+
+                            <!-- Advanced Options -->
+                            <div class="form-group">
+                                <label class="checkbox-label">
+                                    <input type="checkbox" id="ensemble-advanced-options">
+                                    <span class="checkmark"></span>
+                                    Show Advanced Options
+                                </label>
+                            </div>
+
+                            <!-- Advanced Options Panel -->
+                            <div id="ensemble-advanced-panel" class="advanced-options-panel" style="display: none;">
+                                <h4>⚙️ Advanced Options</h4>
+                                
+                                <!-- Cross-Validation -->
+                                <div class="form-group">
+                                    <label for="ensemble-cv-folds">Cross-Validation Folds</label>
+                                    <input type="number" id="ensemble-cv-folds" value="5" min="2" max="10">
+                                    <div class="form-help">
+                                        <span>Number of folds for cross-validation (for stacking ensemble)</span>
+                                    </div>
+                                </div>
+
+                                <!-- Meta-Learner (for stacking) -->
+                                <div id="meta-learner-config" class="form-group" style="display: none;">
+                                    <label for="meta-learner">Meta-Learner</label>
+                                    <select id="meta-learner">
+                                        <option value="linear">Linear Regression</option>
+                                        <option value="ridge">Ridge Regression</option>
+                                        <option value="lasso">Lasso Regression</option>
+                                        <option value="elastic">Elastic Net</option>
+                                        <option value="xgboost">XGBoost</option>
+                                    </select>
+                                    <div class="form-help">
+                                        <span>Second-level model for stacking ensemble</span>
+                                    </div>
+                                </div>
+
+                                <!-- Validation Split -->
+                                <div class="form-group">
+                                    <label for="ensemble-validation-split">Validation Split</label>
+                                    <input type="number" id="ensemble-validation-split" value="0.2" min="0.1" max="0.5" step="0.05">
+                                    <div class="form-help">
+                                        <span>Fraction of data to use for validation</span>
+                                    </div>
+                                </div>
+
+                                <!-- Random State -->
+                                <div class="form-group">
+                                    <label for="ensemble-random-state">Random State</label>
+                                    <input type="number" id="ensemble-random-state" value="42" min="0" max="9999">
+                                    <div class="form-help">
+                                        <span>Random seed for reproducible results</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Submit Button -->
+                            <div class="form-actions">
+                                <button type="submit" id="start-ensemble-training" class="btn-primary">
+                                    <span class="btn-icon">🚀</span>
+                                    Start Ensemble Training
+                                </button>
+                                <button type="button" id="reset-ensemble-form" class="btn-secondary">
+                                    <span class="btn-icon">🔄</span>
+                                    Reset Form
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+
+                    <!-- Training Progress -->
+                    <div class="card training-progress-card" id="ensemble-training-progress" style="display: none;">
+                        <h3>📊 Training Progress</h3>
+                        <div class="progress-container">
+                            <div class="progress-bar">
+                                <div class="progress-fill" id="ensemble-progress-fill"></div>
+                            </div>
+                            <div class="progress-text" id="ensemble-progress-text">0%</div>
+                        </div>
+                        <div class="training-status" id="ensemble-training-status">
+                            <div class="status-item">
+                                <span class="status-label">Status:</span>
+                                <span class="status-value" id="ensemble-status-value">Preparing...</span>
+                            </div>
+                            <div class="status-item">
+                                <span class="status-label">Model:</span>
+                                <span class="status-value" id="ensemble-model-value">-</span>
+                            </div>
+                            <div class="status-item">
+                                <span class="status-label">Progress:</span>
+                                <span class="status-value" id="ensemble-progress-value">0%</span>
+                            </div>
+                        </div>
+                        <div class="training-logs" id="ensemble-training-logs">
+                            <h4>📝 Training Logs</h4>
+                            <div class="logs-container" id="ensemble-logs-container">
+                                <div class="loading">Loading training logs...</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Training History -->
+                    <div class="card training-history-card">
+                        <h3>📚 Ensemble Training History</h3>
+                        <div class="training-history" id="ensemble-training-history">
+                            <div class="loading">Loading ensemble training history...</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <!-- Backtesting Tab -->
             <div class="tab-content" id="backtesting-content">
                 <!-- Backtesting content will be loaded here -->
@@ -389,6 +651,7 @@
     <!-- Tab-specific JavaScript -->
     <script src="js/model-library.js"></script>
     <script src="js/training.js"></script>
+    <script src="js/ensemble_training.js"></script>
     <script src="js/backtesting.js"></script>
     <script src="js/api-hosting.js"></script>
 </body>

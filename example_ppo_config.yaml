@@ -1,0 +1,20 @@
+# Example PPO Training Configuration
+# This file shows how to configure PPO training parameters
+
+model_params:
+  input_dim: 27  # Number of input features (will be set automatically based on data)
+  hidden_dim: 128  # Hidden layer dimension
+  num_actions: 3  # 0=Hold, 1=Buy, 2=Sell
+  lookback_window: 60  # Number of historical timesteps to use
+
+train_params:
+  learning_rate: 3e-4  # Learning rate for Adam optimizer
+  epochs: 100  # Number of training epochs
+  batch_size: 64  # Batch size for training
+  ppo_epochs: 4  # Number of PPO epochs per training iteration
+  clip_ratio: 0.2  # PPO clipping ratio
+  value_coef: 0.5  # Value function loss coefficient
+  entropy_coef: 0.01  # Entropy bonus coefficient
+
+# Example usage:
+# python Utilities/run_training.py --csv_path sample.csv --model ppo --model_name my_ppo_agent

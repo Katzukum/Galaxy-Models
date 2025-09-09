@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PPO UI Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f5f5f5;
+        }
+        .test-container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        select, input {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        .model-params {
+            display: none;
+            margin-top: 20px;
+            padding: 20px;
+            background-color: #f9f9f9;
+            border-radius: 8px;
+        }
+        .params-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+        }
+        .param-group {
+            display: flex;
+            flex-direction: column;
+        }
+        .param-group small {
+            display: block;
+            margin-top: 4px;
+            font-size: 0.85rem;
+            color: #666;
+            font-style: italic;
+        }
+        input[readonly] {
+            background-color: #f0f0f0;
+            opacity: 0.7;
+            cursor: not-allowed;
+        }
+        h4 {
+            margin-top: 0;
+            color: #333;
+        }
+    </style>
+</head>
+<body>
+    <div class="test-container">
+        <h1>PPO UI Test</h1>
+        
+        <div class="form-group">
+            <label for="model-type">Model Type</label>
+            <select id="model-type">
+                <option value="">Select a model type...</option>
+                <option value="transformer">🔄 Transformer (Time-series Forecasting)</option>
+                <option value="nn">🧠 Neural Network (Price Change Regression)</option>
+                <option value="xgboost">🌳 XGBoost (Action Classification)</option>
+                <option value="ppo">🤖 PPO Agent (Reinforcement Learning)</option>
+            </select>
+        </div>
+
+        <div class="training-params-container">
+            <!-- PPO Parameters -->
+            <div id="ppo-params" class="model-params">
+                <h4>🤖 PPO Agent Parameters</h4>
+                <div class="params-grid">
+                    <div class="param-group">
+                        <label for="ppo-hidden-dim">Hidden Dimension</label>
+                        <input type="number" id="ppo-hidden-dim" value="128" min="64" max="512">
+                    </div>
+                    <div class="param-group">
+                        <label for="ppo-num-actions">Number of Actions</label>
+                        <input type="number" id="ppo-num-actions" value="3" min="2" max="5" readonly>
+                        <small>Hold (0), Buy (1), Sell (2)</small>
+                    </div>
+                    <div class="param-group">
+                        <label for="ppo-lookback-window">Lookback Window</label>
+                        <input type="number" id="ppo-lookback-window" value="60" min="20" max="200">
+                    </div>
+                    <div class="param-group">
+                        <label for="ppo-learning-rate">Learning Rate</label>
+                        <input type="number" id="ppo-learning-rate" value="0.0003" min="0.0001" max="0.01" step="0.0001">
+                    </div>
+                    <div class="param-group">
+                        <label for="ppo-epochs">Training Epochs</label>
+                        <input type="number" id="ppo-epochs" value="100" min="10" max="500">
+                    </div>
+                    <div class="param-group">
+                        <label for="ppo-batch-size">Batch Size</label>
+                        <input type="number" id="ppo-batch-size" value="64" min="16" max="256">
+                    </div>
+                    <div class="param-group">
+                        <label for="ppo-ppo-epochs">PPO Epochs</label>
+                        <input type="number" id="ppo-ppo-epochs" value="4" min="1" max="10">
+                        <small>PPO updates per training iteration</small>
+                    </div>
+                    <div class="param-group">
+                        <label for="ppo-clip-ratio">Clip Ratio</label>
+                        <input type="number" id="ppo-clip-ratio" value="0.2" min="0.1" max="0.5" step="0.05">
+                    </div>
+                    <div class="param-group">
+                        <label for="ppo-value-coef">Value Coefficient</label>
+                        <input type="number" id="ppo-value-coef" value="0.5" min="0.1" max="1.0" step="0.1">
+                    </div>
+                    <div class="param-group">
+                        <label for="ppo-entropy-coef">Entropy Coefficient</label>
+                        <input type="number" id="ppo-entropy-coef" value="0.01" min="0.001" max="0.1" step="0.001">
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="test-results" style="margin-top: 20px; padding: 15px; background-color: #e8f4fd; border-radius: 5px;">
+            <h3>Test Results</h3>
+            <p>Select "PPO Agent" from the dropdown above to test the parameter section visibility.</p>
+        </div>
+    </div>
+
+    <script>
+        document.getElementById('model-type').addEventListener('change', function(e) {
+            const modelType = e.target.value;
+            const ppoParams = document.getElementById('ppo-params');
+            const testResults = document.getElementById('test-results');
+            
+            if (modelType === 'ppo') {
+                ppoParams.style.display = 'block';
+                testResults.innerHTML = `
+                    <h3>✅ PPO Parameters Test</h3>
+                    <p><strong>Status:</strong> PPO parameters section is visible!</p>
+                    <p><strong>Model Type:</strong> ${modelType}</p>
+                    <p><strong>Parameters Available:</strong></p>
+                    <ul>
+                        <li>Hidden Dimension: ${document.getElementById('ppo-hidden-dim').value}</li>
+                        <li>Number of Actions: ${document.getElementById('ppo-num-actions').value} (readonly)</li>
+                        <li>Lookback Window: ${document.getElementById('ppo-lookback-window').value}</li>
+                        <li>Learning Rate: ${document.getElementById('ppo-learning-rate').value}</li>
+                        <li>Training Epochs: ${document.getElementById('ppo-epochs').value}</li>
+                        <li>Batch Size: ${document.getElementById('ppo-batch-size').value}</li>
+                        <li>PPO Epochs: ${document.getElementById('ppo-ppo-epochs').value}</li>
+                        <li>Clip Ratio: ${document.getElementById('ppo-clip-ratio').value}</li>
+                        <li>Value Coefficient: ${document.getElementById('ppo-value-coef').value}</li>
+                        <li>Entropy Coefficient: ${document.getElementById('ppo-entropy-coef').value}</li>
+                    </ul>
+                `;
+            } else {
+                ppoParams.style.display = 'none';
+                testResults.innerHTML = `
+                    <h3>PPO Parameters Test</h3>
+                    <p>Select "PPO Agent" from the dropdown above to test the parameter section visibility.</p>
+                `;
+            }
+        });
+    </script>
+</body>
+</html>

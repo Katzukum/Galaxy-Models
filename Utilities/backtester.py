@@ -1,5 +1,4 @@
 import os
-import yaml
 import pickle
 import numpy as np
 import pandas as pd
@@ -7,10 +6,14 @@ import torch
 import torch.nn as nn
 import xgboost as xgb
 from sklearn.preprocessing import MinMaxScaler, StandardScaler
+from Utilities.yaml_utils import YAMLConfig, load_yaml_config
 
 # ####################################################################
 # --- Re-defining Model Architectures ---
 # ####################################################################
+
+# Import PPO network for backtesting
+from NetworkConfigs.PPOTrainer import PPONetwork
 
 class TimeSeriesTransformer(nn.Module):
     def __init__(self, input_dim: int, d_model: int, nhead: int,
@@ -69,14 +72,15 @@ class Backtester:
     def load_artifacts(self):
         """Loads model, scaler, and config from the YAML file."""
         print("--- Loading Artifacts ---")
-        with open(self.config_path, 'r') as f:
-            self.config = yaml.safe_load(f)
+        self.config = load_yaml_config(self.config_path)
         
-        self.model_type = self.config.get('Type')
+        # Use recursive key finding to get model type
+        self.model_type = self.config.find_key('Type')
         print(f"Model Type: {self.model_type}")
 
-        artifact_paths = self.config['artifact_paths']
-        original_config = self.config['Config']
+        # Use recursive key finding to get artifact paths and config
+        artifact_paths = self.config.find_key('artifact_paths')
+        original_config = self.config.find_key('Config')
 
         # Load scaler
         scaler_path = os.path.join(self.model_dir, artifact_paths['scaler'])
@@ -96,6 +100,15 @@ class Backtester:
             self.model.load_model(model_path)
         elif self.model_type == 'Neural Network (Regression)':
             self.model = build_nn_from_config(original_config['architecture'])
+            self.model.load_state_dict(torch.load(model_path, map_location=self.device))
+        elif self.model_type == 'PPO Agent':
+            # Load PPO model
+            model_params = original_config['model_params']
+            self.model = PPONetwork(
+                input_dim=model_params['input_dim'] + 3,  # +3 for account state
+                hidden_dim=model_params['hidden_dim'],
+                num_actions=model_params['num_actions']
+            )
             self.model.load_state_dict(torch.load(model_path, map_location=self.device))
         else:
             raise ValueError(f"Unsupported model type: {self.model_type}")
@@ -172,6 +185,10 @@ class Backtester:
             
             # Prepare input data for prediction (needed for both position checking and new signals)
             if self.model_type == 'Time-Series Transformer':
+                input_data = features_df.iloc[i-seq_length:i].values
+                scaled_input = self.scaler.transform(input_data)
+            elif self.model_type == 'PPO Agent':
+                # PPO needs sequence data
                 input_data = features_df.iloc[i-seq_length:i].values
                 scaled_input = self.scaler.transform(input_data)
             else:  # XGBoost and NN
