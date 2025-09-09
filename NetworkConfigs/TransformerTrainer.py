@@ -2,10 +2,11 @@ import os
 import yaml
 import pickle
 import numpy as np
+import pandas as pd
 import torch
 import torch.nn as nn
 from torch.utils.data import TensorDataset, DataLoader
-from sklearn.preprocessing import MinMaxScaler
+from sklearn.preprocessing import MinMaxScaler, StandardScaler
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_squared_error
 from typing import Dict, Any, List, Tuple
@@ -93,8 +94,8 @@ class TransformerTrainer:
         print(f"Model built and moved to device: {self.device}")
 
         # --- Initialize Scaler ---
-        # Using MinMaxScaler as it's common for financial time-series
-        self.scaler = MinMaxScaler(feature_range=(-1, 1))
+        # Using StandardScaler for better robustness against out-of-distribution data
+        self.scaler = StandardScaler()
 
     def create_sequences(self, data: np.ndarray, seq_length: int) -> Tuple[np.ndarray, np.ndarray]:
         """Creates sequences and corresponding targets from time-series data."""
@@ -205,15 +206,40 @@ class TransformerTrainer:
         print("\nSave process completed.")
 
 # ####################################################################
-# --- 3. Main Pipeline Execution ---
+# --- 3. Delta Data Preparation Function ---
+# ####################################################################
+def prepare_delta_data(data: np.ndarray, feature_names: List[str]) -> np.ndarray:
+    """
+    Converts raw price data into price changes (deltas) for relevant columns.
+    The first row with NaNs is dropped.
+    """
+    df = pd.DataFrame(data, columns=feature_names)
+    
+    # Calculate the difference for price-related features
+    for col in ['close', 'open', 'high', 'low']: # Adjust if your feature names differ
+        if col in df.columns:
+            df[col] = df[col].diff()
+    
+    # Volume can remain as an absolute value or be differenced if desired
+    # df['volume'] = df['volume'].diff()
+    
+    # Drop the first row containing NaN values after the .diff() operation
+    return df.iloc[1:].values
+
+# ####################################################################
+# --- 4. Main Pipeline Execution ---
 # ####################################################################
 def run_training_pipeline(model_name: str, output_dir: str, training_config: Dict, data: np.ndarray):
     """
     Executes the full model training, saving, and verification process.
     """
-    # --- 1. Split data ---
-    train_size = int(len(data) * 0.80)
-    train_data, test_data = data[0:train_size, :], data[train_size:len(data), :]
+    # --- 1. Convert data to deltas ---
+    feature_names = training_config['data_params']['features']
+    delta_data = prepare_delta_data(data, feature_names)
+    
+    # --- 2. Split delta data ---
+    train_size = int(len(delta_data) * 0.80)
+    train_data, test_data = delta_data[0:train_size, :], delta_data[train_size:len(delta_data), :]
 
     # --- 2. Initialize and run the trainer ---
     # The trainer ONLY sees the training data to prevent data leakage

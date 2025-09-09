@@ -7,7 +7,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.distributions import Categorical
-from sklearn.preprocessing import MinMaxScaler
+from sklearn.preprocessing import MinMaxScaler, StandardScaler
 from typing import Dict, Any, List, Tuple
 from collections import deque
 import gym
@@ -246,7 +246,7 @@ class PPOTrainer:
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         
         # Initialize scaler
-        self.scaler = MinMaxScaler(feature_range=(-1, 1))
+        self.scaler = StandardScaler()
         
         # Get model parameters
         model_params = config.get('model_params', {})
