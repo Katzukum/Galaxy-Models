@@ -9,6 +9,7 @@ import numpy as np
 from typing import Dict, Any, Tuple, List
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score, classification_report
+from Utilities.data_utils import prepare_delta_features
 
 class XGBoostTrainer:
     """
@@ -340,9 +341,16 @@ if __name__ == '__main__':
     columns_to_exclude = [col for col in processed_data.columns if 'ahead' in str(col)]
     columns_to_exclude.extend(['date', 'time', 'target', 'action'])
     
-    X_sample = processed_data.drop(columns=columns_to_exclude, errors='ignore').values
-    feature_names = processed_data.drop(columns=columns_to_exclude, errors='ignore').columns.tolist()
-    y_sample = processed_data['target'].values
+    feature_df_raw = processed_data.drop(columns=columns_to_exclude, errors='ignore')
+    feature_names = feature_df_raw.columns.tolist()
+    y_sample_raw = processed_data['target'].values
+
+    # Convert features to deltas
+    feature_df_delta = prepare_delta_features(feature_df_raw)
+
+    # Align labels with the features (the first label is now invalid)
+    y_sample = y_sample_raw[1:]
+    X_sample = feature_df_delta.values
     
     # --- 4. Update Training Configuration for Dynamic Classification ---
     num_classes = len(label_mapping)

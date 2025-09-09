@@ -13,6 +13,7 @@ from collections import deque
 import gym
 from gym import spaces
 import random
+from Utilities.data_utils import prepare_delta_features
 
 # ####################################################################
 # --- 1. Custom Trading Environment for PPO ---
@@ -501,9 +502,16 @@ class PPOTrainer:
 def run_training_pipeline(model_name: str, output_dir: str, training_config: Dict, data: np.ndarray, features: List[str]):
     """Execute the full PPO training pipeline"""
     
-    # Split data for training
-    train_size = int(len(data) * 0.8)
-    train_data = data[:train_size]
+    # Convert raw data numpy array to a DataFrame for processing
+    feature_df_raw = pd.DataFrame(data, columns=features)
+    feature_df_delta = prepare_delta_features(feature_df_raw)
+
+    # Use the delta data for training
+    delta_data = feature_df_delta.values
+
+    # Split delta data for training
+    train_size = int(len(delta_data) * 0.8)
+    train_data = delta_data[:train_size]
     
     # Initialize trainer
     trainer = PPOTrainer(

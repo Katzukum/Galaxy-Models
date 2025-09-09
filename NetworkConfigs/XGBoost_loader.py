@@ -55,6 +55,9 @@ class XGBoostModelLoader:
         # Create reverse mapping for converting predictions back to action names
         self.reverse_label_mapping = {v: k for k, v in self.label_mapping.items()}
         
+        # Add state for delta calculation
+        self.previous_feature_dict = None
+        
         artifact_paths = self.config['artifact_paths']
         scaler_path = os.path.join(model_dir, artifact_paths['scaler'])
         model_path = os.path.join(model_dir, artifact_paths['model'])
@@ -94,28 +97,24 @@ class XGBoostModelLoader:
         Returns:
             str: The predicted trading action (e.g., 'Strong Buy', 'Hold', 'Weak Sell').
         """
-        # --- 1. Validate and Order the Input Features ---
-        if sorted(feature_dict.keys()) != sorted(self.features):
-            raise ValueError(
-                "Input features do not match the features the model was trained on."
-                f"\nExpected: {self.features}"
-                f"\nGot: {list(feature_dict.keys())}"
-            )
-        
-        # Create a list of feature values in the correct order
-        ordered_values = [feature_dict[feature] for feature in self.features]
+        if self.previous_feature_dict is None:
+            self.previous_feature_dict = feature_dict
+            raise ValueError("Not enough historical data to calculate deltas. Received first data point.")
 
-        # --- 2. Prepare Data for XGBoost (Scale and Convert to Array) ---
-        # Reshape to (1, n_features) for the scaler and model
+        # Calculate deltas for price-related features
+        delta_feature_dict = feature_dict.copy()
+        for col in ['close', 'open', 'high', 'low']:
+            if col in delta_feature_dict:
+                delta_feature_dict[col] = feature_dict[col] - self.previous_feature_dict[col]
+
+        # Update the history
+        self.previous_feature_dict = feature_dict
+
+        # Now, proceed with the original prediction logic using the delta_feature_dict
+        ordered_values = [delta_feature_dict[feature] for feature in self.features]
         input_array = np.array(ordered_values).reshape(1, -1)
-        
-        # Scale the features using the loaded scaler
         scaled_array = self.scaler.transform(input_array)
-        
-        # --- 3. Perform Inference ---
         prediction_class = self.model.predict(scaled_array)[0]
-        
-        # Convert the numeric prediction back to action label
         predicted_action = self.reverse_label_mapping[prediction_class]
         
         return predicted_action
@@ -131,25 +130,23 @@ class XGBoostModelLoader:
         Returns:
             Dict[str, float]: A dictionary mapping action names to their probabilities.
         """
-        # --- 1. Validate and Order the Input Features ---
-        if sorted(feature_dict.keys()) != sorted(self.features):
-            raise ValueError(
-                "Input features do not match the features the model was trained on."
-                f"\nExpected: {self.features}"
-                f"\nGot: {list(feature_dict.keys())}"
-            )
-        
-        # Create a list of feature values in the correct order
-        ordered_values = [feature_dict[feature] for feature in self.features]
+        if self.previous_feature_dict is None:
+            self.previous_feature_dict = feature_dict
+            raise ValueError("Not enough historical data to calculate deltas. Received first data point.")
 
-        # --- 2. Prepare Data for XGBoost (Scale and Convert to Array) ---
-        # Reshape to (1, n_features) for the scaler and model
+        # Calculate deltas for price-related features
+        delta_feature_dict = feature_dict.copy()
+        for col in ['close', 'open', 'high', 'low']:
+            if col in delta_feature_dict:
+                delta_feature_dict[col] = feature_dict[col] - self.previous_feature_dict[col]
+
+        # Update the history
+        self.previous_feature_dict = feature_dict
+
+        # Now, proceed with the original prediction logic using the delta_feature_dict
+        ordered_values = [delta_feature_dict[feature] for feature in self.features]
         input_array = np.array(ordered_values).reshape(1, -1)
-        
-        # Scale the features using the loaded scaler
         scaled_array = self.scaler.transform(input_array)
-        
-        # --- 3. Perform Inference ---
         prediction_probabilities = self.model.predict_proba(scaled_array)[0]
         
         # Create a dictionary mapping action names to probabilities

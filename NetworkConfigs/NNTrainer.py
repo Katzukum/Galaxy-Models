@@ -10,6 +10,7 @@ from sklearn.preprocessing import StandardScaler
 from typing import Dict, Any, Tuple, List
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_squared_error, mean_absolute_error
+from Utilities.data_utils import prepare_delta_features
 
 class NNTrainer:
     """
@@ -240,12 +241,18 @@ if __name__ == '__main__':
     data.columns = data.columns.str.lower()
     
     # --- 2. Prepare Data using the Class Method ---
-    X_sample, y_sample, feature_names = NNTrainer.prepare_regression_data(
+    X_sample_raw, y_sample_raw, feature_names = NNTrainer.prepare_regression_data(
         data=data,
         look_ahead_period=5,
         tick_size=0.25,
         columns_to_exclude=['date', 'time', 'target']  # Updated to lowercase after header lowercasing
     )
+
+    feature_df_raw = pd.DataFrame(X_sample_raw, columns=feature_names)
+    feature_df_delta = prepare_delta_features(feature_df_raw)
+
+    X_sample = feature_df_delta.values
+    y_sample = y_sample_raw[1:] # Align labels
     N_FEATURES = X_sample.shape[1]
 
     # --- 3. Define the training configuration for regression ---
