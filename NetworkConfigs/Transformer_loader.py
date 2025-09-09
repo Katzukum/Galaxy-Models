@@ -189,24 +189,26 @@ class TransformerModelLoader:
         
         scaled_prediction = scaled_prediction_tensor.item() # The raw model output, e.g., -0.8635
 
-        # --- 5. INVERSE TRANSFORM WITH PROPER CONTEXT (THE CORRECT FIX) ---
-        # Get the feature vector of the LATEST time step from the scaled sequence.
-        last_step_scaled_features = scaled_sequence[-1].copy()
+        # --- 5. INVERSE TRANSFORM THE PREDICTED DELTA ---
+        # The model now predicts a scaled price change (delta).
+        scaled_predicted_delta = scaled_prediction_tensor.item()
 
-        # Replace the 'close' value (at index 0) with the model's new prediction.
-        # Now we have a complete, realistic feature vector for the next time step.
-        last_step_scaled_features[0] = scaled_prediction
+        # To inverse transform the delta, we place it in a dummy array
+        # where the first column corresponds to the 'close' feature delta.
+        dummy_array = np.zeros((1, self.scaler.n_features_in_))
+        dummy_array[0, 0] = scaled_predicted_delta
 
-        # Reshape for the scaler (it expects a 2D array).
-        # This vector now looks like: [[new_scaled_close, last_scaled_open, last_scaled_high, ...]]
-        prediction_context_vector = last_step_scaled_features.reshape(1, -1)
-        
-        # Use the scaler to inverse transform the complete vector.
-        unscaled_prediction_array = self.scaler.inverse_transform(prediction_context_vector)
-        
-        # The first element of the result is our final, un-scaled price forecast.
-        final_price_forecast = unscaled_prediction_array[0, 0]
-        
+        # This inverse_transform gives us the unscaled, real-world price change prediction.
+        unscaled_predicted_delta = self.scaler.inverse_transform(dummy_array)[0, 0]
+
+        # --- 6. CALCULATE THE FINAL PRICE FORECAST ---
+        # Retrieve the last *actual* close price from the original, unscaled input.
+        # This is the last value passed into the function via feature_dict.
+        last_actual_close_price = feature_dict['close']
+
+        # The final forecast is the last actual price plus the predicted change.
+        final_price_forecast = last_actual_close_price + unscaled_predicted_delta
+
         return final_price_forecast
 
     def create_prediction_response(self, prediction: float) -> TransformerPredictionResponse:

@@ -4,6 +4,7 @@ import pickle
 import xgboost as xgb
 import pandas as pd
 from sklearn.preprocessing import MinMaxScaler
+from sklearn.utils import class_weight
 import numpy as np
 from typing import Dict, Any, Tuple, List
 from sklearn.model_selection import train_test_split
@@ -38,96 +39,38 @@ class XGBoostTrainer:
         data: pd.DataFrame, 
         look_ahead_periods: List[int],
         min_tick_change: int,
+        strong_tick_change: int, # <-- ADD THIS
         tick_size: float
     ) -> Tuple[pd.DataFrame, Dict[str, int]]:
         """
-        Generates 5 labels (Strong Buy/Weak Buy/Hold/Weak Sell/Strong Sell) 
-        based on future price changes across multiple look-ahead periods.
-
-        - Strong Signal: Condition is met for ALL look-ahead periods.
-        - Weak Signal: Condition is met for AT LEAST ONE but not all periods.
-
-        Description of Classification Report Metrics
-
-        This report provides a detailed breakdown of the model's prediction performance for each of the five trading actions.
-
-        precision: The Accuracy of Predictions.
-
-        Question it answers: Of all the times the model predicted a specific action (e.g., "Strong Buy"), how often was it correct?
-
-        Interpretation for Trading: High precision is critical for avoiding bad trades. A high precision on "Strong Buy" means that when the model signals a strong buy, you can have high confidence that it is actually a good entry, minimizing false positives (bad trades).
-
-        recall (or Sensitivity): The Ability to Find All Opportunities.
-
-        Question it answers: Of all the actual trading opportunities that existed in the data (e.g., all the real "Strong Buy" moments), how many did the model successfully identify?
-
-        Interpretation for Trading: High recall is important for capturing profitable moves. A high recall on "Strong Buy" means the model is good at finding most of the real buying opportunities, minimizing false negatives (missed trades).
-
-        f1-score: The Balanced Score.
-
-        Question it answers: What is the harmonic mean (a type of average) of precision and recall?
-
-        Interpretation for Trading: This single number provides a balanced measure of a model's performance for a specific class. It is high only when both precision and recall are high. It's the best single metric for evaluating a class's overall effectiveness, especially when the costs of a bad trade and a missed trade are both significant.
-
-        support: The Number of Real-World Examples.
-
-        Question it answers: How many actual instances of each action were in the test dataset?
-
-        Interpretation for Trading: This column gives context to the other metrics. If "Strong Sell" has a very low support (e.g., only 25 examples), the model's performance on that class might not be statistically reliable. It also helps identify class imbalance, a common problem where the model doesn't have enough examples of certain actions to learn from.
-
-        Summary Rows:
-
-            accuracy: The overall percentage of correct predictions across all classes. It can be misleading if the dataset is imbalanced (e.g., mostly "Hold" actions).
-
-            macro avg: The average of precision, recall, and F1-score calculated independently for each class and then averaged. It treats all classes equally, regardless of their support.
-
-            weighted avg: The average of precision, recall, and F1-score, weighted by the support of each class. This score is more representative of the model's overall performance if the class distribution is imbalanced.
-
-        Args:
-            data (pd.DataFrame): Input dataframe with a 'close' column.
-            look_ahead_periods (List[int]): Future periods to check (e.g., [3, 5]).
-            min_tick_change (int): Minimum number of ticks the price must move.
-            tick_size (float): The value of a single tick (e.g., 0.25 for NQ).
-
-        Returns:
-            Tuple[pd.DataFrame, Dict[str, int]]: 
-                - DataFrame with 'action' and 'target' columns.
-                - Dictionary mapping the string labels to integers.
+        Generates 5 labels based on the MAGNITUDE of future price changes.
+        - Strong Signal: Price moves by at least strong_tick_change.
+        - Weak Signal: Price moves by at least min_tick_change but less than strong_tick_change.
         """
-        print("Generating 5-class Buy/Hold/Sell labels...")
+        print("Generating 5-class Buy/Hold/Sell labels based on MAGNITUDE...")
         
         if 'close' not in data.columns:
             raise ValueError("'close' column not found in the dataframe.")
 
-        price_threshold = min_tick_change * tick_size
-        
-        buy_signals = pd.DataFrame(index=data.index)
-        sell_signals = pd.DataFrame(index=data.index)
+        weak_price_threshold = min_tick_change * tick_size
+        strong_price_threshold = strong_tick_change * tick_size
 
-        # Calculate buy/sell signals for each look-ahead period
-        for period in look_ahead_periods:
-            future_close = data['close'].shift(-period)
-            data[f'close_ahead_{period}'] = future_close # Store for cleanup
-            
-            buy_signals[f'buy_{period}'] = (future_close >= data['close'] + price_threshold)
-            sell_signals[f'sell_{period}'] = (future_close <= data['close'] - price_threshold)
+        # Find the max high and min low across all future periods
+        future_highs = [data['high'].shift(-p) for p in look_ahead_periods]
+        future_lows = [data['low'].shift(-p) for p in look_ahead_periods]
         
-        # Count how many conditions were met for each row
-        buy_hits = buy_signals.sum(axis=1)
-        sell_hits = sell_signals.sum(axis=1)
+        max_future_high = pd.concat(future_highs, axis=1).max(axis=1)
+        min_future_low = pd.concat(future_lows, axis=1).min(axis=1)
         
-        num_periods = len(look_ahead_periods)
+        # --- Define conditions based on the magnitude of the future move ---
+        strong_buy_condition = (max_future_high >= data['close'] + strong_price_threshold)
+        weak_buy_condition = (max_future_high >= data['close'] + weak_price_threshold)
 
-        # Define conditions for the 5 actions
-        strong_buy_condition = (buy_hits == num_periods)
-        weak_buy_condition = (buy_hits > 0) & (buy_hits < num_periods)
-
-        strong_sell_condition = (sell_hits == num_periods)
-        weak_sell_condition = (sell_hits > 0) & (sell_hits < num_periods)
+        strong_sell_condition = (min_future_low <= data['close'] - strong_price_threshold)
+        weak_sell_condition = (min_future_low <= data['close'] - weak_price_threshold)
         
-        # Apply conditions sequentially. Order matters.
+        # Apply conditions sequentially. Order matters to ensure strong signals overwrite weak ones.
         data['action'] = 'Hold'
-        # Apply weak signals first, then overwrite with strong signals
         data.loc[weak_sell_condition, 'action'] = 'Weak Sell'
         data.loc[weak_buy_condition, 'action'] = 'Weak Buy'
         data.loc[strong_sell_condition, 'action'] = 'Strong Sell'
@@ -179,7 +122,14 @@ class XGBoostTrainer:
         
         self.scaler.fit(X_train_float)
         X_train_scaled = self.scaler.transform(X_train_float)
-        self.model.fit(X_train_scaled, y_train)
+        
+        # Calculate balanced class weights to handle imbalanced datasets
+        sample_weights = class_weight.compute_sample_weight(
+            class_weight='balanced',
+            y=y_train
+        )
+        
+        self.model.fit(X_train_scaled, y_train, sample_weight=sample_weights)
         print("Model training has been completed.")
 
     def save(self):
@@ -271,7 +221,8 @@ if __name__ == '__main__':
     processed_data, label_mapping = XGBoostTrainer.generate_labels(
         data=data.copy(), # Pass a copy to avoid modifying original dataframe in place
         look_ahead_periods=[3, 5],
-        min_tick_change=20,
+        min_tick_change=20, # Threshold for a "Weak" signal
+        strong_tick_change=40, # Threshold for a "Strong" signal
         tick_size=0.25
     )
     
