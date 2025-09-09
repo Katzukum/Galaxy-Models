@@ -139,6 +139,29 @@ class TransformerModelLoader:
                 return os.path.join(directory, filename)
         return ""
 
+    def _convert_to_deltas(self, data: np.ndarray) -> np.ndarray:
+        """
+        Converts absolute price data to deltas (price changes) to match training data format.
+        This method replicates the prepare_delta_data function used during training.
+        
+        Args:
+            data (np.ndarray): Input data with shape [sequence_length, n_features]
+            
+        Returns:
+            np.ndarray: Delta data with the same shape, first row will be NaN values
+        """
+        # Calculate deltas for price-related features (same logic as in training)
+        delta_data = data.copy()
+        
+        # Calculate differences for price columns (assuming first 4 columns are price features)
+        # This matches the logic in prepare_delta_data function from TransformerTrainer.py
+        for i in range(min(4, data.shape[1])):  # Process first 4 columns as price features
+            delta_data[1:, i] = data[1:, i] - data[:-1, i]
+        
+        # The first row will contain NaN values after diff operation, but we keep it
+        # to maintain the same sequence length as the input
+        return delta_data
+
     def predict(self, feature_dict: Dict[str, float]) -> float:
         """
         Accepts a single time-step of features, adds it to the sequence history,
@@ -176,8 +199,12 @@ class TransformerModelLoader:
         # Convert the full sequence history to a NumPy array
         input_sequence = np.array(list(self.history))
         
-        # Scale the entire sequence
-        scaled_sequence = self.scaler.transform(input_sequence)
+        # Convert absolute prices to deltas (price changes) to match training data
+        # The scaler was fitted on delta data during training
+        delta_sequence = self._convert_to_deltas(input_sequence)
+        
+        # Scale the delta sequence using the scaler fitted on delta data
+        scaled_sequence = self.scaler.transform(delta_sequence)
         
         # Convert to a PyTorch tensor and add the batch dimension
         # Required shape: [batch_size, seq_len, n_features] for the training model
