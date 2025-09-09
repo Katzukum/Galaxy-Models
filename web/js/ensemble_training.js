@@ -7,14 +7,19 @@
 let availableModels = [];
 let selectedModels = [];
 let ensembleTrainingInProgress = false;
+let ensembleInitialized = false;
 
 // Note: Ensemble training is initialized when the tab is loaded, not on DOM ready
 
-// Fallback: Initialize if the ensemble training tab is visible on page load
+// Initialize when DOM is loaded and watch for tab activation
 document.addEventListener('DOMContentLoaded', function() {
-    console.log('[ENSEMBLE] DOM loaded, checking for ensemble training tab...');
+    console.log('[ENSEMBLE] DOM loaded, setting up ensemble training...');
     
-    // Check if ensemble training tab is visible (for direct access)
+    // Make function globally available immediately
+    window.initializeEnsembleTraining = initializeEnsembleTraining;
+    console.log('[ENSEMBLE] Made initializeEnsembleTraining globally available');
+    
+    // Check if ensemble training tab is visible on page load
     const ensembleTab = document.getElementById('ensemble-training-content');
     console.log('[ENSEMBLE] Ensemble tab element:', ensembleTab);
     
@@ -26,16 +31,52 @@ document.addEventListener('DOMContentLoaded', function() {
         if (ensembleTab.classList.contains('active')) {
             console.log('[ENSEMBLE] Ensemble training tab is active on page load, initializing...');
             initializeEnsembleTraining();
-        } else {
-            console.log('[ENSEMBLE] Ensemble training tab not active on page load');
+        }
+        
+        // Set up MutationObserver to watch for tab activation
+        const observer = new MutationObserver(function(mutations) {
+            mutations.forEach(function(mutation) {
+                if (mutation.type === 'attributes' && mutation.attributeName === 'class') {
+                    const target = mutation.target;
+                    if (target.id === 'ensemble-training-content' && target.classList.contains('active')) {
+                        console.log('[ENSEMBLE] Ensemble tab became active, initializing...');
+                        initializeEnsembleTraining();
+                    }
+                }
+            });
+        });
+        
+        // Start observing the ensemble tab for class changes
+        observer.observe(ensembleTab, { attributes: true, attributeFilter: ['class'] });
+        console.log('[ENSEMBLE] Set up observer for tab activation');
+        
+        // Also observe the tab content container for new active tabs
+        const tabContainer = document.getElementById('tab-content-container');
+        if (tabContainer) {
+            const containerObserver = new MutationObserver(function(mutations) {
+                mutations.forEach(function(mutation) {
+                    if (mutation.type === 'attributes' && mutation.attributeName === 'class') {
+                        mutation.addedNodes.forEach(function(node) {
+                            if (node.nodeType === Node.ELEMENT_NODE && 
+                                node.id === 'ensemble-training-content' && 
+                                node.classList.contains('active')) {
+                                console.log('[ENSEMBLE] Ensemble tab activated via container observer');
+                                setTimeout(() => initializeEnsembleTraining(), 100);
+                            }
+                        });
+                    }
+                });
+            });
+            containerObserver.observe(tabContainer, { 
+                attributes: true, 
+                childList: true, 
+                subtree: true,
+                attributeFilter: ['class']
+            });
         }
     } else {
         console.error('[ENSEMBLE] Ensemble training tab element not found!');
     }
-    
-    // Make function globally available
-    window.initializeEnsembleTraining = initializeEnsembleTraining;
-    console.log('[ENSEMBLE] Made initializeEnsembleTraining globally available');
 });
 
 /**
@@ -44,6 +85,12 @@ document.addEventListener('DOMContentLoaded', function() {
 function initializeEnsembleTraining() {
     console.log('Initializing ensemble training...');
     
+    // Prevent multiple initializations
+    if (ensembleInitialized) {
+        console.log('[ENSEMBLE] Already initialized, skipping...');
+        return;
+    }
+    
     // Check if we're on the ensemble training tab
     const ensembleTab = document.getElementById('ensemble-training-content');
     if (!ensembleTab) {
@@ -51,7 +98,14 @@ function initializeEnsembleTraining() {
         return;
     }
     
-    console.log('Ensemble training tab found, initializing...');
+    // Check if tab is actually active
+    if (!ensembleTab.classList.contains('active')) {
+        console.log('[ENSEMBLE] Tab not active, skipping initialization...');
+        return;
+    }
+    
+    console.log('Ensemble training tab found and active, initializing...');
+    ensembleInitialized = true;
     
     // Load available models
     loadAvailableModels();
@@ -399,10 +453,10 @@ function updateWeightConfiguration() {
     html += '</div>';
     
     // Add weight validation
-    html += '<div class="weight-validation">
+    html += `<div class="weight-validation">
         <span id="weight-sum">Sum: 1.000</span>
         <span id="weight-status" class="weight-status valid">✓ Valid</span>
-    </div>';
+    </div>`;
     
     weightInputs.innerHTML = html;
     
@@ -586,6 +640,33 @@ function getEnsembleFormData() {
 }
 
 /**
+ * Upload CSV file to server
+ */
+async function uploadCsvFile(file) {
+    console.log('Uploading CSV file:', file.name);
+    
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = async function(e) {
+            try {
+                const content = e.target.result.split(',')[1]; // Remove data:... prefix
+                const fileData = {
+                    name: file.name,
+                    content: content
+                };
+                
+                const result = await eel.upload_csv_file(fileData)();
+                resolve(result);
+            } catch (error) {
+                reject(error);
+            }
+        };
+        reader.onerror = () => reject(new Error('Failed to read file'));
+        reader.readAsDataURL(file);
+    });
+}
+
+/**
  * Start ensemble training
  */
 async function startEnsembleTraining(formData) {
@@ -598,13 +679,23 @@ async function startEnsembleTraining(formData) {
         showEnsembleTrainingProgress();
         
         // Update status
-        updateEnsembleTrainingStatus('Preparing ensemble training...', 0);
+        updateEnsembleTrainingStatus('Uploading CSV file...', 10);
+        
+        // Upload CSV file first
+        const csvFileData = await uploadCsvFile(formData.csvFile);
+        if (!csvFileData.success) {
+            throw new Error('Failed to upload CSV file: ' + csvFileData.error);
+        }
+        
+        // Update status
+        updateEnsembleTrainingStatus('Starting ensemble training...', 20);
         
         // Start training process
         const trainingId = await eel.start_ensemble_training(
             formData.ensembleType,
             formData.ensembleName,
             formData.selectedModels,
+            csvFileData.file_path,
             formData.weights,
             formData.advancedOptions
         )();

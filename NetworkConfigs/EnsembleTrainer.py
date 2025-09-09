@@ -73,15 +73,21 @@ class EnsembleTrainer:
             model_type = model_info['type']
             model_dir = os.path.dirname(model_info['configPath'])
             
+            print(f"[DEBUG] Processing model: {model_name}")
+            print(f"[DEBUG] Model type: {model_type}")
+            print(f"[DEBUG] Config path: {model_info['configPath']}")
+            print(f"[DEBUG] Model directory: {model_dir}")
+            
             try:
                 # Load model based on type
-                if model_type.lower() in ['neural network', 'nn']:
+                model_type_lower = model_type.lower()
+                if 'neural network' in model_type_lower or model_type_lower in ['nn', 'neural network (regression)']:
                     loader = NNModelLoader(model_dir)
-                elif model_type.lower() in ['transformer']:
+                elif 'transformer' in model_type_lower or 'time-series transformer' in model_type_lower:
                     loader = TransformerModelLoader(model_dir)
-                elif model_type.lower() in ['xgboost']:
+                elif 'xgboost' in model_type_lower or 'xgboostclassifier' in model_type_lower:
                     loader = XGBoostModelLoader(model_dir)
-                elif model_type.lower() in ['ppo agent', 'ppo']:
+                elif 'ppo' in model_type_lower or 'ppo agent' in model_type_lower:
                     loader = PPOModelLoader(model_dir)
                 else:
                     print(f"Warning: Unknown model type {model_type} for {model_name}")

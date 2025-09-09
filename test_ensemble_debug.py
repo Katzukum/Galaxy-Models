@@ -17,7 +17,7 @@ def test_debug_code_added():
     # Test main.js debug code
     main_js = Path("web/js/main.js")
     if main_js.exists():
-        with open(main_js, 'r') as f:
+        with open(main_js, 'r', encoding='utf-8') as f:
             content = f.read()
         
         debug_checks = [
@@ -40,11 +40,11 @@ def test_debug_code_added():
     # Test ensemble_training.js debug code
     ensemble_js = Path("web/js/ensemble_training.js")
     if ensemble_js.exists():
-        with open(ensemble_js, 'r') as f:
+        with open(ensemble_js, 'r', encoding='utf-8') as f:
             content = f.read()
         
         debug_checks = [
-            'console.log(\'[ENSEMBLE] DOM loaded, checking for ensemble training tab...\')',
+            'console.log(\'[ENSEMBLE] DOM loaded, setting up ensemble training...\')',
             'console.log(\'[ENSEMBLE] loadAvailableModels called\')',
             'console.log(\'[ENSEMBLE] renderModelSelectionList called\')',
             'console.log(\'[ENSEMBLE] showModelSelectionError called with message:\', message)'
@@ -63,7 +63,7 @@ def test_debug_code_added():
     # Test Main.py debug code
     main_py = Path("Main.py")
     if main_py.exists():
-        with open(main_py, 'r') as f:
+        with open(main_py, 'r', encoding='utf-8') as f:
             content = f.read()
         
         debug_checks = [
@@ -93,7 +93,7 @@ def test_html_structure():
         print("❌ index.html not found")
         return False
     
-    with open(html_file, 'r') as f:
+    with open(html_file, 'r', encoding='utf-8') as f:
         content = f.read()
     
     # Check for ensemble training elements
@@ -120,7 +120,7 @@ def test_js_loading_order():
         print("❌ index.html not found")
         return False
     
-    with open(html_file, 'r') as f:
+    with open(html_file, 'r', encoding='utf-8') as f:
         content = f.read()
     
     # Check that ensemble_training.js is loaded after main.js

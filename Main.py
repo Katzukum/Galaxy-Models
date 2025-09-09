@@ -65,12 +65,13 @@ def set_debug_verbose(enabled):
     return {'success': True, 'debug_verbose': DEBUG_VERBOSE}
 
 @eel.expose
-def start_ensemble_training(ensemble_type, ensemble_name, selected_models, weights=None, advanced_options=None):
+def start_ensemble_training(ensemble_type, ensemble_name, selected_models, csv_path, weights=None, advanced_options=None):
     """Start ensemble training process"""
     try:
         debug_print(f"Starting ensemble training: {ensemble_name}")
         debug_print(f"Ensemble type: {ensemble_type}")
         debug_print(f"Selected models: {len(selected_models)}")
+        debug_print(f"CSV path: {csv_path}")
         
         # Generate training ID
         training_id = f"ensemble_{int(time.time())}"
@@ -78,7 +79,7 @@ def start_ensemble_training(ensemble_type, ensemble_name, selected_models, weigh
         # Start training in background thread
         training_thread = threading.Thread(
             target=run_ensemble_training_thread,
-            args=(training_id, ensemble_type, ensemble_name, selected_models, weights, advanced_options)
+            args=(training_id, ensemble_type, ensemble_name, selected_models, csv_path, weights, advanced_options)
         )
         training_thread.daemon = True
         training_thread.start()
@@ -89,17 +90,33 @@ def start_ensemble_training(ensemble_type, ensemble_name, selected_models, weigh
         debug_print(f"Error starting ensemble training: {e}")
         raise e
 
-def run_ensemble_training_thread(training_id, ensemble_type, ensemble_name, selected_models, weights, advanced_options):
+def run_ensemble_training_thread(training_id, ensemble_type, ensemble_name, selected_models, csv_path, weights, advanced_options):
     """Run ensemble training in background thread"""
     try:
         debug_print(f"Starting ensemble training thread: {training_id}")
+        debug_print(f"CSV path received: {csv_path}")
         
-        # This would be implemented to call the actual ensemble training
-        # For now, simulate the process
-        time.sleep(2)  # Simulate training time
+        # Validate CSV file exists
+        if not csv_path or not os.path.exists(csv_path):
+            debug_print(f"CSV file not found: {csv_path}")
+            return
         
-        debug_print(f"Ensemble training completed: {training_id}")
+        # Call the actual ensemble training function
+        success = run_ensemble_training(
+            ensemble_name=ensemble_name,
+            ensemble_type=ensemble_type,
+            selected_models=selected_models,
+            csv_path=csv_path,
+            weights=weights,
+            advanced_options=advanced_options,
+            output_dir="Models"
+        )
         
+        if success:
+            debug_print(f"Ensemble training completed successfully: {training_id}")
+        else:
+            debug_print(f"Ensemble training failed: {training_id}")
+            
     except Exception as e:
         debug_print(f"Ensemble training thread error: {e}")
 

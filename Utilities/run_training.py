@@ -142,7 +142,7 @@ def main():
         }
         
         MODEL_NAME = args.model_name if args.model_name else "nq_forecaster_transformer_cli"
-        OUTPUT_DIR = f"./Models/{MODEL_NAME}"
+        OUTPUT_DIR = f"./Models/Transformer_{MODEL_NAME}"
 
         run_transformer_pipeline(
             model_name=MODEL_NAME, output_dir=OUTPUT_DIR,

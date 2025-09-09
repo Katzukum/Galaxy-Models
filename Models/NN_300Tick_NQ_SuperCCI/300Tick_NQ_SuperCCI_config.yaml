@@ -6,7 +6,7 @@ artifact_paths:
 Config:
   architecture:
   - type: Linear
-    in_features: 27
+    in_features: 34
     out_features: 64
   - type: ReLU
   - type: Dropout
@@ -29,25 +29,32 @@ Config:
   - low
   - close
   - volume
-  - supertrendcciv2_9_9_9_exponential_true_standard_10_2.618_14_atr_100_-100_#ff32cd32_#ffff0000_#ff808080_cci
-  - supertrendcciv2_9_9_9_exponential_true_standard_10_2.618_14_atr_100_-100_#ff32cd32_#ffff0000_#ff808080_ccima
-  - supertrendcciv2_9_9_9_exponential_true_standard_10_2.618_14_atr_100_-100_#ff32cd32_#ffff0000_#ff808080_supertrend
-  - supertrendcciv2_9_9_9_exponential_true_standard_10_2.618_14_atr_100_-100_#ff32cd32_#ffff0000_#ff808080_trenddirection
-  - pricedistances__dist_ema_9
-  - pricedistances__dist_ema_21
-  - pricedistances__dist_t3_48
-  - pricedistances__dist_copen
-  - pricedistances__dist_chigh
-  - pricedistances__dist_clow
-  - pricedistances__dist_popen
-  - pricedistances__dist_phigh
-  - pricedistances__dist_plow
-  - pricedistances__dist_pclose
-  - pricedistances__dist_vwap
-  - waddahattarexplosion deadzone_150_10_true_9_30_true_9_30_2_true_200_100_2_trendup
-  - waddahattarexplosion deadzone_150_10_true_9_30_true_9_30_2_true_200_100_2_trenddown
-  - waddahattarexplosion deadzone_150_10_true_9_30_true_9_30_2_true_200_100_2_explosionline
-  - waddahattarexplosion deadzone_150_10_true_9_30_true_9_30_2_true_200_100_2_deadzoneline
-  - atr_14_atr
-  - correlation_10_es sep25_correlation
-  - barasatr_14_bar as atr %
+  - supertrendcciv2_cci
+  - supertrendcciv2_ccima
+  - supertrendcciv2_supertrend
+  - supertrendcciv2_trenddirection
+  - pricedistances_dist_ema_9
+  - pricedistances_dist_ema_21
+  - pricedistances_dist_t3_48
+  - pricedistances_dist_copen
+  - pricedistances_dist_chigh
+  - pricedistances_dist_clow
+  - pricedistances_dist_popen
+  - pricedistances_dist_phigh
+  - pricedistances_dist_plow
+  - pricedistances_dist_pclose
+  - pricedistances_dist_vwap
+  - waddahattarexplosion deadzone_trendup
+  - waddahattarexplosion deadzone_trenddown
+  - waddahattarexplosion deadzone_explosionline
+  - waddahattarexplosion deadzone_deadzoneline
+  - atr_atr
+  - correlation_correlation
+  - barasatr_bar as atr %
+  - opexatrbands_upperlimit
+  - opexatrbands_lowerlimit
+  - opexatrbands_daystoopex
+  - timeplots_tradedayofyear
+  - timeplots_dayofweekplot
+  - timeplots_hourofday
+  - timeplots_qrt15min

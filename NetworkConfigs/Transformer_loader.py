@@ -185,11 +185,29 @@ class TransformerModelLoader:
         
         # --- 4. Perform Inference ---
         with torch.no_grad():
-            prediction_tensor = self.model(input_tensor)
+            scaled_prediction_tensor = self.model(input_tensor)
         
-        prediction = prediction_tensor.item()
+        scaled_prediction = scaled_prediction_tensor.item() # The raw model output, e.g., -0.8635
+
+        # --- 5. INVERSE TRANSFORM WITH PROPER CONTEXT (THE CORRECT FIX) ---
+        # Get the feature vector of the LATEST time step from the scaled sequence.
+        last_step_scaled_features = scaled_sequence[-1].copy()
+
+        # Replace the 'close' value (at index 0) with the model's new prediction.
+        # Now we have a complete, realistic feature vector for the next time step.
+        last_step_scaled_features[0] = scaled_prediction
+
+        # Reshape for the scaler (it expects a 2D array).
+        # This vector now looks like: [[new_scaled_close, last_scaled_open, last_scaled_high, ...]]
+        prediction_context_vector = last_step_scaled_features.reshape(1, -1)
         
-        return prediction
+        # Use the scaler to inverse transform the complete vector.
+        unscaled_prediction_array = self.scaler.inverse_transform(prediction_context_vector)
+        
+        # The first element of the result is our final, un-scaled price forecast.
+        final_price_forecast = unscaled_prediction_array[0, 0]
+        
+        return final_price_forecast
 
     def create_prediction_response(self, prediction: float) -> TransformerPredictionResponse:
         """Creates a properly formatted prediction response for the API"""
