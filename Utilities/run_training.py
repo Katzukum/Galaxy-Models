@@ -211,18 +211,25 @@ def main():
             label_params = training_params['label_params']
             look_ahead_periods = label_params.get('look_ahead_periods', [3, 5])
             min_tick_change = label_params.get('min_tick_change', 20)
+            strong_tick_change = label_params.get('strong_tick_change', 40)
         else:
             look_ahead_periods = [3, 5]
             min_tick_change = 20
+            strong_tick_change = 40
         
         # Validate data before processing
         if 'close' not in data.columns:
             print("Error: 'close' column not found in the CSV file. Required for XGBoost training.")
+            print(f"Available columns: {list(data.columns)}")
             return
         
         processed_data, label_mapping = XGBoostTrainer.generate_labels(
-            data=data.copy(), look_ahead_periods=look_ahead_periods,
-            min_tick_change=min_tick_change, tick_size=0.25
+            data=data.copy(), 
+            look_ahead_periods=look_ahead_periods,
+            min_tick_change=min_tick_change, 
+            strong_tick_change=strong_tick_change,
+            tick_size=0.25,
+            use_3_class=True  # Use 3-class system: Strong Sell, Neutral, Strong Buy
         )
         
         # Validate processed data
@@ -232,7 +239,7 @@ def main():
         
         # Prepare X and y for the model
         cols_to_exclude = [col for col in processed_data.columns if 'ahead' in str(col)]
-        cols_to_exclude.extend(['Date', 'Time', 'target', 'action'])
+        cols_to_exclude.extend(['date', 'time', 'target', 'action'])  # Updated to lowercase after header lowercasing
         
         # Debug: Show what columns we're working with
         print(f"Original columns: {processed_data.columns.tolist()}")
@@ -259,15 +266,18 @@ def main():
         print(f"Final feature names: {feature_names}")
         
         # Use custom model parameters if provided
+        num_classes = len(label_mapping)  # Dynamic number of classes based on label mapping
         if training_params and 'model_params' in training_params:
             model_params = training_params['model_params'].copy()
-            model_params['num_class'] = 5  # Always 5 classes for this implementation
+            model_params['num_class'] = num_classes  # Set based on actual classes
             model_params['use_label_encoder'] = False
         else:
             model_params = {
-                'objective': 'multi:softmax', 'num_class': 5, 'eval_metric': 'mlogloss',
+                'objective': 'multi:softmax', 'num_class': num_classes, 'eval_metric': 'mlogloss',
                 'n_estimators': 150, 'learning_rate': 0.1, 'max_depth': 4, 'use_label_encoder': False
             }
+        
+        print(f"Configured XGBoost for {num_classes} classes: {list(label_mapping.keys())}")
         
         config = {
             'model_params': model_params,

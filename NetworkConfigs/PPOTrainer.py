@@ -528,8 +528,54 @@ def run_training_pipeline(model_name: str, output_dir: str, training_config: Dic
         print(f"- {filename}")
 
 if __name__ == '__main__':
-    # Example usage
-    print("PPO Trainer - Example usage")
+    # --- 1. Load Data and Define Parameters ---
+    data = pd.read_csv('sample.csv')
+    data.columns = data.columns.str.lower()
     
-    # This would be called from run_training.py with actual data
-    pass
+    # --- 2. Prepare feature data (excluding date/time columns) ---
+    columns_to_exclude = ['date', 'time']
+    existing_columns_to_exclude = [col for col in columns_to_exclude if col in data.columns]
+    feature_data = data.drop(columns=existing_columns_to_exclude, errors='ignore')
+    feature_names = feature_data.columns.tolist()
+    X_sample = feature_data.values
+    
+    print(f"Data prepared with {X_sample.shape[0]} samples and {X_sample.shape[1]} features.")
+    print(f"Feature names: {feature_names[:10]}...")  # Show first 10 features
+    
+    # --- 3. Define the training configuration for PPO ---
+    example_config = {
+        'model_params': {
+            'input_dim': X_sample.shape[1],  # Number of market features
+            'hidden_dim': 128,
+            'num_actions': 3,  # Hold, Buy, Sell
+            'lookback_window': 60
+        },
+        'train_params': {
+            'learning_rate': 3e-4,
+            'epochs': 50,
+            'batch_size': 64,
+            'ppo_epochs': 4,
+            'clip_ratio': 0.2,
+            'value_coef': 0.5,
+            'entropy_coef': 0.01
+        },
+        'data_params': {
+            'features': feature_names
+        }
+    }
+    
+    # --- 4. Define a model name and output path ---
+    MODEL_NAME = "nq_trading_agent_v1"
+    OUTPUT_DIR = f"./Models/PPO_{MODEL_NAME}"
+    
+    # --- 5. Call the main training pipeline function ---
+    print(f"\nStarting PPO training pipeline for model: {MODEL_NAME}")
+    print(f"Output directory: {OUTPUT_DIR}")
+    
+    run_training_pipeline(
+        model_name=MODEL_NAME,
+        output_dir=OUTPUT_DIR,
+        training_config=example_config,
+        data=X_sample,
+        features=feature_names
+    )

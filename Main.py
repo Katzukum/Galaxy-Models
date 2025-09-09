@@ -276,9 +276,11 @@ def run_training_process(training_id, model_type, csv_path, model_name, training
             # Debug mode: Open command window to show training output
             debug_print("Opening command window for training process")
             if os.name == 'nt':
-                # Windows: Use CREATE_NEW_CONSOLE and don't capture output
+                # Windows: Use cmd /k to keep window open after execution (even on error)
+                # This allows viewing errors before the window closes
+                debug_cmd = ['cmd', '/k'] + cmd
                 process = subprocess.Popen(
-                    cmd,
+                    debug_cmd,
                     cwd=project_root,
                     creationflags=subprocess.CREATE_NEW_CONSOLE
                 )
@@ -637,9 +639,11 @@ def start_api_server(config):
             # Debug mode: Open command window to show API server output
             debug_print(f"Opening command window for API server: {' '.join(cmd)}")
             if os.name == 'nt':
-                # Windows: Use CREATE_NEW_CONSOLE and don't capture output
+                # Windows: Use cmd /k to keep window open after execution (even on error)
+                # This allows viewing errors before the window closes
+                debug_cmd = ['cmd', '/k'] + cmd
                 api_process = subprocess.Popen(
-                    cmd,
+                    debug_cmd,
                     cwd=project_root,
                     env=env,
                     creationflags=subprocess.CREATE_NEW_CONSOLE

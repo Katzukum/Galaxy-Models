@@ -202,6 +202,7 @@ def test_ensemble_data_flow():
         
         # Test data loading
         data = pd.read_csv(csv_path)
+        data.columns = data.columns.str.lower()
         assert data.shape[0] > 0
         assert data.shape[1] > 0
         print("✅ Test data created and loaded successfully")

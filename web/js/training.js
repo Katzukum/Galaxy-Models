@@ -334,7 +334,8 @@ class Training {
             };
             params.label_params = {
                 look_ahead_periods: document.getElementById('xgb-look-ahead').value.split(',').map(x => parseInt(x.trim())),
-                min_tick_change: parseInt(document.getElementById('xgb-min-tick').value)
+                min_tick_change: parseInt(document.getElementById('xgb-min-tick').value),
+                strong_tick_change: parseInt(document.getElementById('xgb-strong-tick').value)
             };
         } else if (modelType === 'ppo') {
             params.model_params = {
@@ -386,6 +387,7 @@ class Training {
         document.getElementById('xgb-max-depth').value = 4;
         document.getElementById('xgb-look-ahead').value = '3,5';
         document.getElementById('xgb-min-tick').value = 20;
+        document.getElementById('xgb-strong-tick').value = 40;
 
         // Reset PPO parameters
         document.getElementById('ppo-hidden-dim').value = 128;

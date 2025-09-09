@@ -237,13 +237,14 @@ def run_training_pipeline(model_name: str, output_dir: str, training_config: Dic
 if __name__ == '__main__':
     # --- 1. Load Data and Define Parameters ---
     data = pd.read_csv('sample.csv')
+    data.columns = data.columns.str.lower()
     
     # --- 2. Prepare Data using the Class Method ---
     X_sample, y_sample, feature_names = NNTrainer.prepare_regression_data(
         data=data,
         look_ahead_period=5,
         tick_size=0.25,
-        columns_to_exclude=['Date', 'Time', 'target']
+        columns_to_exclude=['date', 'time', 'target']  # Updated to lowercase after header lowercasing
     )
     N_FEATURES = X_sample.shape[1]
 
