@@ -1,95 +1,50 @@
-#!/usr/bin/env python3
-"""
-Ensemble Model Trainer for Galaxy Models
-Combines multiple trained models to create ensemble predictions
-"""
-
 import os
-import sys
+import yaml
 import pickle
 import numpy as np
 import pandas as pd
-import yaml
 from typing import Dict, List, Any, Tuple, Union
 from datetime import datetime
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score, mean_squared_error, r2_score
 from sklearn.linear_model import LinearRegression, Ridge, Lasso, ElasticNet
 import xgboost as xgb
-
-# Add project root to path for imports
-project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.append(project_root)
-
-try:
-    from Utilities.yaml_utils import YAMLConfig, load_yaml_config
-except ImportError:
-    # Fallback if yaml_utils is not available
-    print("Warning: yaml_utils not found, using basic YAML loading")
-    
-    class YAMLConfig:
-        def __init__(self, data):
-            self.data = data
-        
-        def find_key(self, key, default=None):
-            def _search_dict(d, search_key):
-                if isinstance(d, dict):
-                    if search_key in d:
-                        return d[search_key]
-                    for value in d.values():
-                        result = _search_dict(value, search_key)
-                        if result is not None:
-                            return result
-                return None
-            
-            result = _search_dict(self.data, key)
-            return result if result is not None else default
-    
-    def load_yaml_config(file_path):
-        with open(file_path, 'r') as f:
-            data = yaml.safe_load(f)
-        return YAMLConfig(data)
-
-# Import model loaders
-try:
-    from NetworkConfigs.NN_loader import NNModelLoader
-    from NetworkConfigs.Transformer_loader import TransformerModelLoader
-    from NetworkConfigs.XGBoost_loader import XGBoostModelLoader
-    from NetworkConfigs.PPO_loader import PPOModelLoader
-except ImportError:
-    # Try importing with relative path if running from NetworkConfigs directory
-    from NN_loader import NNModelLoader
-    from Transformer_loader import TransformerModelLoader
-    from XGBoost_loader import XGBoostModelLoader
-    from PPO_loader import PPOModelLoader
+from Utilities.data_utils import prepare_delta_features
 
 
 class EnsembleTrainer:
     """
-    Ensemble model trainer that combines multiple trained models
+    A class to train an ensemble model that combines multiple trained models.
+    It saves the ensemble configuration, model references, and a primary YAML config file.
     """
-    
-    def __init__(self, ensemble_name: str, ensemble_type: str, selected_models: List[Dict], 
-                 weights: Dict = None, advanced_options: Dict = None):
+
+    def __init__(self, 
+                 model_name: str, 
+                 config: Dict[str, Any], 
+                 output_path: str = '/models'):
         """
-        Initialize ensemble trainer
-        
+        Initializes the EnsembleTrainer.
+
         Args:
-            ensemble_name: Name of the ensemble model
-            ensemble_type: Type of ensemble (voting, averaging, weighted, stacking)
-            selected_models: List of selected models with their configurations
-            weights: Weights for weighted ensemble
-            advanced_options: Advanced configuration options
+            model_name (str): A unique name for the ensemble model.
+            config (dict): A dictionary containing ensemble configuration.
+            output_path (str): The directory path to save the output files.
         """
-        self.ensemble_name = ensemble_name
-        self.ensemble_type = ensemble_type
-        self.selected_models = selected_models
-        self.weights = weights or {}
-        self.advanced_options = advanced_options or {}
+        if not model_name:
+            raise ValueError("A 'model_name' must be provided.")
+            
+        self.model_name = model_name
+        self.config = config
+        self.output_path = output_path
+        
+        # Extract ensemble configuration
+        self.ensemble_type = config.get('ensemble_type', 'averaging')
+        self.selected_models = config.get('selected_models', [])
+        self.weights = config.get('weights', {})
+        self.advanced_options = config.get('advanced_options', {})
         
         # Initialize model loaders
         self.model_loaders = {}
-        self.model_predictions = {}
         self.ensemble_model = None
         
         # Training data
@@ -101,12 +56,23 @@ class EnsembleTrainer:
         
         # Results
         self.training_results = {}
-        self.ensemble_accuracy = None
-        self.ensemble_mse = None
         
     def load_models(self):
         """Load all selected models"""
         print(f"Loading {len(self.selected_models)} models for ensemble...")
+        
+        # Import model loaders
+        try:
+            from NetworkConfigs.NN_loader import NNModelLoader
+            from NetworkConfigs.Transformer_loader import TransformerModelLoader
+            from NetworkConfigs.XGBoost_loader import XGBoostModelLoader
+            from NetworkConfigs.PPO_loader import PPOModelLoader
+        except ImportError:
+            # Try importing with relative path if running from NetworkConfigs directory
+            from NN_loader import NNModelLoader
+            from Transformer_loader import TransformerModelLoader
+            from XGBoost_loader import XGBoostModelLoader
+            from PPO_loader import PPOModelLoader
         
         for model_info in self.selected_models:
             model_name = model_info['name']
@@ -130,8 +96,18 @@ class EnsembleTrainer:
                 elif 'ppo' in model_type_lower or 'ppo agent' in model_type_lower:
                     loader = PPOModelLoader(model_dir)
                 else:
-                    print(f"Warning: Unknown model type {model_type} for {model_name}")
-                    continue
+                    # Try to determine model type from directory name or config file
+                    if 'nn_' in model_dir.lower() or 'neural' in model_dir.lower():
+                        loader = NNModelLoader(model_dir)
+                    elif 'transformer_' in model_dir.lower():
+                        loader = TransformerModelLoader(model_dir)
+                    elif 'xgboost_' in model_dir.lower():
+                        loader = XGBoostModelLoader(model_dir)
+                    elif 'ppo_' in model_dir.lower():
+                        loader = PPOModelLoader(model_dir)
+                    else:
+                        print(f"Warning: Unknown model type {model_type} for {model_name}")
+                        continue
                 
                 self.model_loaders[model_name] = loader
                 print(f"✓ Loaded {model_name} ({model_type})")
@@ -145,8 +121,59 @@ class EnsembleTrainer:
         
         print(f"Successfully loaded {len(self.model_loaders)} models")
     
+    @staticmethod
+    def prepare_ensemble_data(
+        data: pd.DataFrame,
+        look_ahead_period: int = 5,
+        tick_size: float = 0.25,
+        columns_to_exclude: List[str] = None
+    ) -> Tuple[np.ndarray, np.ndarray, List[str]]:
+        """
+        Prepares data for ensemble training by creating a target variable and features.
+
+        Args:
+            data (pd.DataFrame): The input dataframe with at least a 'close' column.
+            look_ahead_period (int): The number of bars to look into the future for the target.
+            tick_size (float): The value of a single tick (e.g., 0.25 for NQ).
+            columns_to_exclude (List[str], optional): A list of columns to exclude from features. 
+                                                     Defaults to ['Date', 'Time', 'target'].
+
+        Returns:
+            Tuple[np.ndarray, np.ndarray, List[str]]: 
+                - X (features), 
+                - y (target), 
+                - list of feature names.
+        """
+        print("Preparing data for ensemble training...")
+        
+        if columns_to_exclude is None:
+            columns_to_exclude = ['date', 'time', 'target']
+
+        # Normalize column names to lowercase for consistent processing
+        data.columns = data.columns.str.lower()
+        
+        # Update columns_to_exclude to lowercase as well
+        columns_to_exclude = [col.lower() for col in columns_to_exclude]
+
+        # --- 1. Create the Target Variable (Price Change in Ticks) ---
+        future_close = data['close'].shift(-look_ahead_period)
+        data['target'] = (future_close - data['close']) / tick_size
+        
+        # Drop rows with NaN values resulting from the shift
+        processed_data = data.dropna().copy()
+
+        # --- 2. Prepare X and y for the model ---
+        # Only drop columns that actually exist in the dataframe
+        existing_columns_to_exclude = [col for col in columns_to_exclude if col in processed_data.columns]
+        X_sample = processed_data.drop(columns=existing_columns_to_exclude).values 
+        feature_names = processed_data.drop(columns=existing_columns_to_exclude).columns.tolist()
+        y_sample = processed_data['target'].values
+        
+        print(f"Data prepared with {X_sample.shape[0]} samples and {X_sample.shape[1]} features.")
+        return X_sample, y_sample, feature_names
+
     def prepare_data(self, csv_path: str):
-        """Prepare training data"""
+        """Prepare training data for ensemble"""
         print("Preparing ensemble training data...")
         
         # Load CSV data
@@ -207,49 +234,17 @@ class EnsembleTrainer:
         
         for model_name, loader in self.model_loaders.items():
             try:
-                # Get predictions from model
-                model_predictions = []
+                print(f"Collecting predictions from {model_name}...")
                 
-                for i in range(X.shape[0]):
-                    # Convert row to feature dictionary
-                    base_feature_dict = {feature: float(X[i, j]) for j, feature in enumerate(self.features)}
-                    
-                    # Extend feature dict with missing features (set to 0 or use defaults)
-                    model_features = loader.features
-                    full_feature_dict = base_feature_dict.copy()
-                    
-                    for required_feature in model_features:
-                        if required_feature not in full_feature_dict:
-                            # Use 0 as default for missing features
-                            full_feature_dict[required_feature] = 0.0
-                            if i == 0:  # Log only once
-                                print(f"  Warning: Setting missing feature '{required_feature}' to 0.0 for model {model_name}")
-                    
-                    # Get prediction from model
-                    if hasattr(loader, 'predict'):
-                        pred = loader.predict(full_feature_dict)
-                        
-                        # Handle different return types
-                        if isinstance(pred, tuple):
-                            # PPO returns (action, confidence, value) - use action
-                            pred = pred[0]
-                        elif isinstance(pred, str):
-                            # XGBoost returns string labels - convert to numeric
-                            if hasattr(loader, 'label_mapping'):
-                                pred = loader.label_mapping.get(pred, 0)
-                            else:
-                                # Try to map common action strings to numbers
-                                action_map = {
-                                    'strong sell': 0, 'weak sell': 1, 'hold': 2, 
-                                    'weak buy': 3, 'strong buy': 4
-                                }
-                                pred = action_map.get(pred.lower(), 2)  # Default to hold
-                        
-                        model_predictions.append(pred)
-                    else:
-                        # Fallback for models without predict method
-                        pred = loader.model.predict(X[i:i+1])
-                        model_predictions.append(pred[0] if hasattr(pred, '__len__') else pred)
+                # Check if this is a stateful model that needs sequential data
+                is_stateful = hasattr(loader, 'history') or hasattr(loader, 'previous_feature_dict')
+                
+                if is_stateful:
+                    # For stateful models, we need to process data sequentially
+                    model_predictions = self._collect_sequential_predictions(loader, X, model_name)
+                else:
+                    # For stateless models, we can process in batch
+                    model_predictions = self._collect_batch_predictions(loader, X, model_name)
                 
                 predictions[model_name] = np.array(model_predictions)
                 print(f"✓ Collected predictions from {model_name}: shape {predictions[model_name].shape}")
@@ -261,6 +256,159 @@ class EnsembleTrainer:
                 continue
         
         return predictions
+    
+    def _collect_sequential_predictions(self, loader, X: np.ndarray, model_name: str) -> list:
+        """Collect predictions from stateful models that need sequential data"""
+        model_predictions = []
+        
+        # Reset the loader's state for clean prediction
+        if hasattr(loader, 'history'):
+            loader.history.clear()
+        if hasattr(loader, 'previous_feature_dict'):
+            loader.previous_feature_dict = None
+        
+        # Determine sequence length for this model
+        sequence_length = 1  # Default for most models
+        if hasattr(loader, 'sequence_length'):
+            sequence_length = loader.sequence_length
+        elif hasattr(loader, 'config') and 'Config' in loader.config:
+            # Try to get sequence length from model config
+            config = loader.config['Config']
+            if 'data_params' in config and 'sequence_length' in config['data_params']:
+                sequence_length = config['data_params']['sequence_length']
+        
+        print(f"  Model {model_name} requires {sequence_length} data points for prediction")
+        
+        # Process data sequentially
+        for i in range(X.shape[0]):
+            try:
+                # Convert row to feature dictionary
+                base_feature_dict = {feature: float(X[i, j]) for j, feature in enumerate(self.features)}
+                
+                # Extend feature dict with missing features (set to 0 or use defaults)
+                model_features = loader.features
+                full_feature_dict = base_feature_dict.copy()
+                
+                for required_feature in model_features:
+                    if required_feature not in full_feature_dict:
+                        # Use 0 as default for missing features
+                        full_feature_dict[required_feature] = 0.0
+                        if i == 0:  # Log only once
+                            print(f"  Warning: Setting missing feature '{required_feature}' to 0.0 for model {model_name}")
+                
+                # Get prediction from model
+                pred = loader.predict(full_feature_dict)
+                
+                # Handle None predictions
+                if pred is None:
+                    print(f"  Warning: Model {model_name} returned None prediction at data point {i}")
+                    model_predictions.append(0.0)
+                    continue
+                
+                # Handle different return types
+                if isinstance(pred, tuple):
+                    # PPO returns (action, confidence, value) - use action
+                    pred = pred[0]
+                elif isinstance(pred, str):
+                    # XGBoost returns string labels - convert to numeric
+                    if hasattr(loader, 'label_mapping'):
+                        pred = loader.label_mapping.get(pred, 0)
+                    else:
+                        # Try to map common action strings to numbers
+                        action_map = {
+                            'strong sell': 0, 'weak sell': 1, 'hold': 2, 
+                            'weak buy': 3, 'strong buy': 4
+                        }
+                        pred = action_map.get(pred.lower(), 2)  # Default to hold
+                
+                model_predictions.append(pred)
+                
+            except ValueError as e:
+                # Handle cases where not enough historical data is available
+                if "Not enough historical data" in str(e) or "first data point" in str(e):
+                    # For the first data points, use a default prediction
+                    model_predictions.append(0.0)  # Default prediction
+                    if i == 0:  # Log only once
+                        print(f"  Using default predictions for first data point (not enough historical data)")
+                    continue
+                raise e
+            except Exception as e:
+                print(f"  Error at data point {i}: {e}")
+                # Use default prediction for this data point
+                model_predictions.append(0.0)
+        
+        return model_predictions
+    
+    def _collect_batch_predictions(self, loader, X: np.ndarray, model_name: str) -> list:
+        """Collect predictions from stateless models"""
+        model_predictions = []
+        
+        for i in range(X.shape[0]):
+            try:
+                # Convert row to feature dictionary
+                base_feature_dict = {feature: float(X[i, j]) for j, feature in enumerate(self.features)}
+                
+                # Extend feature dict with missing features (set to 0 or use defaults)
+                model_features = loader.features
+                full_feature_dict = base_feature_dict.copy()
+                
+                for required_feature in model_features:
+                    if required_feature not in full_feature_dict:
+                        # Use 0 as default for missing features
+                        full_feature_dict[required_feature] = 0.0
+                        if i == 0:  # Log only once
+                            print(f"  Warning: Setting missing feature '{required_feature}' to 0.0 for model {model_name}")
+                
+                # Get prediction from model
+                if hasattr(loader, 'predict'):
+                    pred = loader.predict(full_feature_dict)
+                    
+                    # Handle None predictions
+                    if pred is None:
+                        print(f"  Warning: Model {model_name} returned None prediction at data point {i}")
+                        model_predictions.append(0.0)
+                        continue
+                    
+                    # Handle different return types
+                    if isinstance(pred, tuple):
+                        # PPO returns (action, confidence, value) - use action
+                        pred = pred[0]
+                    elif isinstance(pred, str):
+                        # XGBoost returns string labels - convert to numeric
+                        if hasattr(loader, 'label_mapping'):
+                            pred = loader.label_mapping.get(pred, 0)
+                        else:
+                            # Try to map common action strings to numbers
+                            action_map = {
+                                'strong sell': 0, 'weak sell': 1, 'hold': 2, 
+                                'weak buy': 3, 'strong buy': 4
+                            }
+                            pred = action_map.get(pred.lower(), 2)  # Default to hold
+                    
+                    model_predictions.append(pred)
+                else:
+                    # Fallback for models without predict method
+                    pred = loader.model.predict(X[i:i+1])
+                    if pred is None:
+                        print(f"  Warning: Model {model_name} returned None prediction at data point {i}")
+                        model_predictions.append(0.0)
+                    else:
+                        model_predictions.append(pred[0] if hasattr(pred, '__len__') else pred)
+                    
+            except ValueError as e:
+                # Handle cases where not enough historical data is available
+                if "Not enough historical data" in str(e) or "first data point" in str(e):
+                    model_predictions.append(0.0)  # Default prediction
+                    if i == 0:  # Log only once
+                        print(f"  Using default predictions for first data point (not enough historical data)")
+                    continue
+                raise e
+            except Exception as e:
+                print(f"  Error at data point {i}: {e}")
+                # Use default prediction for this data point
+                model_predictions.append(0.0)
+        
+        return model_predictions
     
     def create_voting_ensemble(self, predictions: Dict[str, np.ndarray]) -> np.ndarray:
         """Create voting ensemble (majority vote for classification)"""
@@ -277,6 +425,12 @@ class EnsembleTrainer:
                 votes = pred_array[:, i]
                 ensemble_pred.append(np.bincount(votes.astype(int)).argmax())
             
+            # Store ensemble configuration for saving
+            self.ensemble_model = {
+                'type': 'voting',
+                'model_names': list(predictions.keys())
+            }
+            
             return np.array(ensemble_pred)
         
         return None
@@ -290,6 +444,12 @@ class EnsembleTrainer:
         
         # Calculate mean prediction
         ensemble_pred = np.mean(pred_array, axis=0)
+        
+        # Store ensemble configuration for saving
+        self.ensemble_model = {
+            'type': 'averaging',
+            'model_names': list(predictions.keys())
+        }
         
         return ensemble_pred
     
@@ -307,6 +467,13 @@ class EnsembleTrainer:
                 ensemble_pred = weight * pred
             else:
                 ensemble_pred += weight * pred
+        
+        # Store ensemble configuration for saving
+        self.ensemble_model = {
+            'type': 'weighted',
+            'weights': self.weights,
+            'model_names': list(predictions.keys())
+        }
         
         return ensemble_pred
     
@@ -425,35 +592,41 @@ class EnsembleTrainer:
         else:
             self.ensemble_mse = self.training_results.get('test_mse', 0)
     
-    def save_ensemble(self, output_dir: str):
-        """Save ensemble model and configuration"""
-        print(f"Saving ensemble model to {output_dir}...")
-        
-        # Create output directory
-        os.makedirs(output_dir, exist_ok=True)
-        
-        # Save ensemble configuration
-        config = {
-            'ensemble_name': self.ensemble_name,
-            'ensemble_type': self.ensemble_type,
-            'selected_models': self.selected_models,
-            'weights': self.weights,
-            'features': self.features,
-            'training_results': self.training_results,
-            'created_at': datetime.now().isoformat(),
-            'advanced_options': self.advanced_options
-        }
-        
-        config_path = os.path.join(output_dir, f"{self.ensemble_name}_config.yaml")
-        with open(config_path, 'w') as f:
-            yaml.dump(config, f, default_flow_style=False, sort_keys=False)
-        
+    def save(self):
+        """Saves the ensemble configuration, model references, and a primary YAML config file."""
+        os.makedirs(self.output_path, exist_ok=True)
+        print(f"Output directory '{self.output_path}' is ready.")
+
         # Save ensemble model (if applicable)
+        ensemble_filename = f"{self.model_name}_ensemble.pkl"
+        config_filename = f"{self.model_name}_config.yaml"
+        refs_filename = f"{self.model_name}_model_refs.yaml"
+
+        ensemble_path = os.path.join(self.output_path, ensemble_filename)
+        config_path = os.path.join(self.output_path, config_filename)
+        refs_path = os.path.join(self.output_path, refs_filename)
+
+        # Save ensemble model
         if self.ensemble_model is not None:
-            model_path = os.path.join(output_dir, f"{self.ensemble_name}_ensemble.pkl")
-            with open(model_path, 'wb') as f:
+            with open(ensemble_path, 'wb') as f:
                 pickle.dump(self.ensemble_model, f)
-        
+            print(f"Ensemble model has been saved to: '{ensemble_path}'")
+
+        # Create final configuration with the same structure as other trainers
+        final_config = {
+            'model_name': self.model_name,
+            'Type': 'Ensemble Model',
+            'artifact_paths': {
+                'ensemble_model': ensemble_filename,
+                'model_refs': refs_filename
+            },
+            'Config': self.config.copy()
+        }
+
+        with open(config_path, 'w') as yaml_file:
+            yaml.dump(final_config, yaml_file, default_flow_style=False, sort_keys=False)
+        print(f"Primary configuration has been saved to: '{config_path}'")
+
         # Save model loaders reference
         model_refs = {}
         for model_name, loader in self.model_loaders.items():
@@ -462,22 +635,114 @@ class EnsembleTrainer:
                 'config_path': getattr(loader, 'config_path', None)
             }
         
-        refs_path = os.path.join(output_dir, f"{self.ensemble_name}_model_refs.yaml")
         with open(refs_path, 'w') as f:
             yaml.dump(model_refs, f, default_flow_style=False, sort_keys=False)
-        
-        print(f"Ensemble model saved successfully")
-        print(f"Configuration: {config_path}")
-        if self.ensemble_model is not None:
-            print(f"Model: {model_path}")
-        print(f"Model references: {refs_path}")
+        print(f"Model references have been saved to: '{refs_path}'")
+        print("\nSave process completed.")
+
+
+def run_training_pipeline(model_name: str, output_dir: str, training_config: Dict, csv_path: str):
+    """Executes the full ensemble training, saving, and verification process."""
+    trainer = EnsembleTrainer(
+        model_name=model_name,
+        config=training_config,
+        output_path=output_dir
+    )
+    
+    # Load models
+    trainer.load_models()
+    
+    # Prepare data (this sets self.features and splits the data)
+    trainer.prepare_data(csv_path)
+    
+    # Train ensemble
+    trainer.train_ensemble()
+    
+    # Test ensemble
+    trainer.test_ensemble()
+    
+    # Save ensemble
+    trainer.save()
+
+    print("\n" + "="*50)
+    print("--- Verifying artifacts by loading from YAML config ---")
+    print("="*50)
+
+    config_yaml_path = os.path.join(output_dir, f"{model_name}_config.yaml")
+    with open(config_yaml_path, 'r') as f:
+        loaded_config = yaml.safe_load(f)
+
+    print(f"Loaded config for model: {loaded_config['model_name']}")
+    
+    # Verify output files
+    print(f"\nGenerated files in '{output_dir}':")
+    for filename in os.listdir(output_dir):
+        print(f"- {filename}")
+
+
+if __name__ == '__main__':
+    # --- 1. Load Data and Define Parameters ---
+    data = pd.read_csv('sample.csv')
+    data.columns = data.columns.str.lower()
+    
+    # --- 2. Prepare Data using the Class Method ---
+    X_sample_raw, y_sample_raw, feature_names = EnsembleTrainer.prepare_ensemble_data(
+        data=data,
+        look_ahead_period=5,
+        tick_size=0.25,
+        columns_to_exclude=['date', 'time', 'target']
+    )
+
+    # Convert features to deltas
+    feature_df_raw = pd.DataFrame(X_sample_raw, columns=feature_names)
+    feature_df_delta = prepare_delta_features(feature_df_raw)
+
+    X_sample = feature_df_delta.values
+    y_sample = y_sample_raw[1:] # Align labels
+
+    # --- 3. Define the training configuration for ensemble ---
+    example_config = {
+        'ensemble_type': 'averaging',
+        'selected_models': [
+            {
+                'name': 'test_model_1',
+                'type': 'Neural Network (Regression)',
+                'configPath': 'Models/test/test_config.yaml'
+            },
+            {
+                'name': 'test_model_2', 
+                'type': 'XGBoostClassifier',
+                'configPath': 'Models/test/test_config.yaml'
+            }
+        ],
+        'weights': {},
+        'advanced_options': {
+            'validationSplit': 0.2,
+            'randomState': 42,
+            'metaLearner': 'linear'
+        },
+        'features': feature_names
+    }
+    
+    # --- 4. Define a model name and output path ---
+    MODEL_NAME = "ensemble_test_model"
+    OUTPUT_DIR = f"./Models/Ensemble_{MODEL_NAME}"
+
+    # --- 5. Call the main training pipeline function ---
+    run_training_pipeline(
+        model_name=MODEL_NAME,
+        output_dir=OUTPUT_DIR,
+        training_config=example_config,
+        X=X_sample,
+        y=y_sample
+    )
 
 
 def run_ensemble_training(ensemble_name: str, ensemble_type: str, selected_models: List[Dict], 
                          csv_path: str, weights: Dict = None, advanced_options: Dict = None,
-                         output_dir: str = "Models/Ensemble"):
+                         output_dir: str = "Models"):
     """
-    Run ensemble training pipeline
+    Backward compatibility wrapper for the old ensemble training interface.
     
     Args:
         ensemble_name: Name of the ensemble model
@@ -494,137 +759,50 @@ def run_ensemble_training(ensemble_name: str, ensemble_type: str, selected_model
     print(f"CSV path: {csv_path}")
     
     try:
-        # Create ensemble trainer
-        trainer = EnsembleTrainer(
-            ensemble_name=ensemble_name,
-            ensemble_type=ensemble_type,
-            selected_models=selected_models,
-            weights=weights,
-            advanced_options=advanced_options
+        # Load CSV data
+        data = pd.read_csv(csv_path)
+        data.columns = data.columns.str.lower()
+        
+        # Prepare data using the static method
+        X_sample_raw, y_sample_raw, feature_names = EnsembleTrainer.prepare_ensemble_data(
+            data=data,
+            look_ahead_period=5,
+            tick_size=0.25,
+            columns_to_exclude=['date', 'time', 'target']
         )
         
-        # Load models
-        trainer.load_models()
+        # Convert features to deltas
+        feature_df_raw = pd.DataFrame(X_sample_raw, columns=feature_names)
+        feature_df_delta = prepare_delta_features(feature_df_raw)
         
-        # Prepare data
-        trainer.prepare_data(csv_path)
+        X_sample = feature_df_delta.values
+        y_sample = y_sample_raw[1:] # Align labels
         
-        # Train ensemble
-        trainer.train_ensemble()
+        # Create ensemble configuration
+        ensemble_config = {
+            'ensemble_type': ensemble_type,
+            'selected_models': selected_models,
+            'weights': weights or {},
+            'advanced_options': advanced_options or {},
+            'features': feature_names
+        }
         
-        # Test ensemble
-        trainer.test_ensemble()
+        # Create output directory
+        ensemble_output_dir = os.path.join(output_dir, f"Ensemble_{ensemble_name}")
         
-        # Save ensemble
-        ensemble_output_dir = os.path.join(output_dir, ensemble_name)
-        trainer.save_ensemble(ensemble_output_dir)
+        # Run training pipeline
+        run_training_pipeline(
+            model_name=ensemble_name,
+            output_dir=ensemble_output_dir,
+            training_config=ensemble_config,
+            csv_path=csv_path
+        )
         
         print("Ensemble training completed successfully!")
         return True
         
     except Exception as e:
         print(f"Ensemble training failed: {e}")
-        return False
-
-
-if __name__ == "__main__":
-    # --- 1. Find and select random models from Models folder ---
-    import random
-    import glob
-    from pathlib import Path
-    
-    # Try to find Models folder - could be in current dir or parent dir
-    models_folder = Path("Models")
-    if not models_folder.exists():
-        models_folder = Path("../Models")
-        if not models_folder.exists():
-            print("Error: Models folder not found in current directory or parent directory!")
-            print(f"Current working directory: {os.getcwd()}")
-            exit(1)
-    
-    # Find all YAML config files in Models folder
-    yaml_files = list(models_folder.glob("**/*_config.yaml"))
-    
-    if len(yaml_files) < 2:
-        print(f"Error: Need at least 2 models, found {len(yaml_files)} YAML files")
-        print("Available files:", [str(f) for f in yaml_files])
-        exit(1)
-    
-    # Select 2 random models
-    selected_yaml_files = random.sample(yaml_files, 2)
-    print(f"Found {len(yaml_files)} models, selected 2 random models:")
-    
-    selected_models = []
-    for yaml_file in selected_yaml_files:
-        print(f"Loading config from: {yaml_file}")
-        
-        try:
-            # Load YAML config to get model info
-            config = load_yaml_config(str(yaml_file))
-            model_name = config.find_key('model_name', f'model_{yaml_file.stem}')
-            model_type = config.find_key('Type', 'Unknown')
-            
-            selected_models.append({
-                'name': model_name,
-                'type': model_type,
-                'configPath': str(yaml_file)
-            })
-            
-            print(f"  - {model_name} ({model_type})")
-            
-        except Exception as e:
-            print(f"Error loading {yaml_file}: {e}")
-            continue
-    
-    if len(selected_models) < 2:
-        print("Error: Could not load at least 2 valid models")
-        exit(1)
-    
-    # --- 2. Prepare CSV data ---
-    csv_path = "sample.csv"
-    if not os.path.exists(csv_path):
-        csv_path = "../sample.csv"
-        if not os.path.exists(csv_path):
-            print(f"Error: sample.csv not found in current directory or parent directory!")
-            print(f"Current working directory: {os.getcwd()}")
-            exit(1)
-    
-    # --- 3. Set ensemble configuration ---
-    ensemble_name = f"auto_ensemble_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-    ensemble_type = "averaging"  # Use averaging as default for mixed model types
-    
-    # Advanced options
-    advanced_options = {
-        'validationSplit': 0.2,
-        'randomState': 42,
-        'metaLearner': 'linear'  # For stacking ensemble
-    }
-    
-    print(f"\n--- Starting Ensemble Training ---")
-    print(f"Ensemble name: {ensemble_name}")
-    print(f"Ensemble type: {ensemble_type}")
-    print(f"CSV data: {csv_path}")
-    print(f"Selected models: {len(selected_models)}")
-    
-    # --- 4. Run ensemble training ---
-    try:
-        success = run_ensemble_training(
-            ensemble_name=ensemble_name,
-            ensemble_type=ensemble_type,
-            selected_models=selected_models,
-            csv_path=csv_path,
-            weights=None,  # Equal weights
-            advanced_options=advanced_options,
-            output_dir="Models/Ensemble"
-        )
-        
-        if success:
-            print(f"\n✅ Ensemble training completed successfully!")
-            print(f"Ensemble saved in: Models/Ensemble/{ensemble_name}")
-        else:
-            print(f"\n❌ Ensemble training failed!")
-            
-    except Exception as e:
-        print(f"\n❌ Ensemble training error: {e}")
         import traceback
         traceback.print_exc()
+        return False

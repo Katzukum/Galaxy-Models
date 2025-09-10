@@ -1,0 +1,28 @@
+model_name: Simple_OHLCV_Test
+Type: XGBoostClassifier
+artifact_paths:
+  scaler: test_models/simple_test_scaler.pkl
+  model: test_models/simple_test_model.json
+Config:
+  model_params:
+    objective: multi:softmax
+    eval_metric: mlogloss
+    n_estimators: 100
+    learning_rate: 0.1
+    max_depth: 3
+    use_label_encoder: false
+    num_class: 3
+  features:
+  - open
+  - high
+  - low
+  - close
+  - volume
+  label_mapping:
+    Strong Sell: 0
+    Neutral: 1
+    Strong Buy: 2
+  consecutive_label_remapping:
+    0: 0
+    1: 1
+    2: 2

@@ -110,6 +110,9 @@ function initializeEnsembleTraining() {
     // Load available models
     loadAvailableModels();
     
+    // Load available CSV files
+    loadAvailableCSVFiles();
+    
     // Setup event listeners
     setupEnsembleEventListeners();
     
@@ -126,7 +129,10 @@ function setupEnsembleEventListeners() {
     // Ensemble type change
     const ensembleTypeSelect = document.getElementById('ensemble-type');
     if (ensembleTypeSelect) {
-        ensembleTypeSelect.addEventListener('change', handleEnsembleTypeChange);
+        ensembleTypeSelect.addEventListener('change', (event) => {
+            handleEnsembleTypeChange(event);
+            validateEnsembleForm();
+        });
     }
     
     // Advanced options toggle
@@ -159,10 +165,45 @@ function setupEnsembleEventListeners() {
         resetBtn.addEventListener('click', resetEnsembleForm);
     }
     
+    // Ensemble name input
+    const ensembleNameInput = document.getElementById('ensemble-name');
+    if (ensembleNameInput) {
+        ensembleNameInput.addEventListener('input', validateEnsembleForm);
+        ensembleNameInput.addEventListener('blur', validateEnsembleForm);
+    }
+    
     // File input change
     const csvFileInput = document.getElementById('ensemble-csv-file');
     if (csvFileInput) {
-        csvFileInput.addEventListener('change', handleCsvFileChange);
+        csvFileInput.addEventListener('change', (event) => {
+            handleCsvFileChange(event);
+            validateEnsembleForm();
+        });
+        
+        // Drag and drop functionality
+        const fileDisplay = document.querySelector('#ensemble-training-content .file-input-display');
+        if (fileDisplay) {
+            fileDisplay.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                fileDisplay.style.borderColor = 'var(--accent-color)';
+            });
+
+            fileDisplay.addEventListener('dragleave', (e) => {
+                e.preventDefault();
+                fileDisplay.style.borderColor = 'var(--border-color)';
+            });
+
+            fileDisplay.addEventListener('drop', (e) => {
+                e.preventDefault();
+                fileDisplay.style.borderColor = 'var(--border-color)';
+                
+                const files = e.dataTransfer.files;
+                if (files.length > 0 && files[0].type === 'text/csv') {
+                    csvFileInput.files = files;
+                    handleCsvFileChange({ target: csvFileInput });
+                }
+            });
+        }
     }
 }
 
@@ -510,9 +551,20 @@ function toggleAdvancedOptions(event) {
  */
 function handleCsvFileChange(event) {
     const file = event.target.files[0];
+    const fileDisplay = document.querySelector('#ensemble-training-content .file-input-display');
+    const fileText = document.querySelector('#ensemble-training-content .file-input-text');
+    const fileIcon = document.querySelector('#ensemble-training-content .file-input-icon');
+
     if (file) {
         console.log('CSV file selected:', file.name);
+        fileDisplay.classList.add('has-file');
+        fileText.textContent = file.name;
+        fileIcon.textContent = '✅';
         validateEnsembleForm();
+    } else {
+        fileDisplay.classList.remove('has-file');
+        fileText.textContent = 'Choose CSV file or drag & drop';
+        fileIcon.textContent = '📁';
     }
 }
 
@@ -527,28 +579,49 @@ function validateEnsembleForm() {
     let isValid = true;
     let errors = [];
     
+    // Clear previous error indicators
+    clearValidationErrors();
+    
     // Check ensemble type
     if (!ensembleType) {
         isValid = false;
         errors.push('Please select an ensemble type');
+        highlightFieldError('ensemble-type', 'Please select an ensemble type');
+    } else {
+        clearFieldError('ensemble-type');
     }
     
     // Check model selection
     if (selectedModels.length < 2) {
         isValid = false;
         errors.push('Please select at least 2 models');
+        highlightFieldError('model-selection-list', 'Please select at least 2 models');
+    } else {
+        clearFieldError('model-selection-list');
     }
     
     // Check ensemble name
     if (!ensembleName.trim()) {
         isValid = false;
         errors.push('Please enter an ensemble name');
+        highlightFieldError('ensemble-name', 'Please enter an ensemble name');
+    } else {
+        clearFieldError('ensemble-name');
     }
     
-    // Check CSV file
-    if (!csvFile) {
+    // Check CSV file - either from available files list or file input
+    const selectedFileItem = document.querySelector('#ensemble-available-csv-files .csv-file-item.selected');
+    const fileInput = document.getElementById('ensemble-csv-file');
+    const hasSelectedFile = selectedFileItem || (fileInput.files && fileInput.files.length > 0 && fileInput.files[0].size > 0);
+    
+    if (!hasSelectedFile) {
         isValid = false;
-        errors.push('Please select a CSV file');
+        errors.push('Please select a CSV file from the available files list or upload a new file');
+        highlightFieldError('ensemble-csv-file', 'Please select a CSV file');
+        highlightFieldError('ensemble-available-csv-files', 'Please select a CSV file');
+    } else {
+        clearFieldError('ensemble-csv-file');
+        clearFieldError('ensemble-available-csv-files');
     }
     
     // Check weights for weighted ensemble
@@ -557,6 +630,9 @@ function validateEnsembleForm() {
         if (weightStatus && !weightStatus.classList.contains('valid')) {
             isValid = false;
             errors.push('Please ensure weights sum to 1.0');
+            highlightFieldError('weight-config', 'Please ensure weights sum to 1.0');
+        } else {
+            clearFieldError('weight-config');
         }
     }
     
@@ -565,7 +641,19 @@ function validateEnsembleForm() {
     if (submitBtn) {
         submitBtn.disabled = !isValid;
         submitBtn.textContent = isValid ? '🚀 Start Ensemble Training' : '❌ Fix Errors First';
+        
+        // Add visual feedback to button
+        if (isValid) {
+            submitBtn.classList.remove('btn-error');
+            submitBtn.classList.add('btn-success');
+        } else {
+            submitBtn.classList.remove('btn-success');
+            submitBtn.classList.add('btn-error');
+        }
     }
+    
+    // Show error summary if there are errors
+    showValidationErrorSummary(errors);
     
     return isValid;
 }
@@ -605,7 +693,23 @@ async function handleEnsembleFormSubmit(event) {
 function getEnsembleFormData() {
     const ensembleType = document.getElementById('ensemble-type').value;
     const ensembleName = document.getElementById('ensemble-name').value;
-    const csvFile = document.getElementById('ensemble-csv-file').files[0];
+    
+    // Check for data file - either from available files list or file input
+    let csvPath = '';
+    let csvFile = null;
+    
+    // First, check if a file is selected from the available files list
+    const selectedFileItem = document.querySelector('#ensemble-available-csv-files .csv-file-item.selected');
+    if (selectedFileItem) {
+        csvPath = selectedFileItem.dataset.path;
+    } 
+    // If no file selected from list, check if a file was uploaded via file input
+    else {
+        const fileInput = document.getElementById('ensemble-csv-file');
+        if (fileInput.files && fileInput.files.length > 0 && fileInput.files[0].size > 0) {
+            csvFile = fileInput.files[0];
+        }
+    }
     
     // Get weights for weighted ensemble
     let weights = null;
@@ -635,6 +739,7 @@ function getEnsembleFormData() {
         })),
         weights,
         csvFile,
+        csvPath,
         advancedOptions
     };
 }
@@ -678,13 +783,23 @@ async function startEnsembleTraining(formData) {
         // Show progress panel
         showEnsembleTrainingProgress();
         
-        // Update status
-        updateEnsembleTrainingStatus('Uploading CSV file...', 10);
+        // Determine CSV file path
+        let csvFilePath = '';
         
-        // Upload CSV file first
-        const csvFileData = await uploadCsvFile(formData.csvFile);
-        if (!csvFileData.success) {
-            throw new Error('Failed to upload CSV file: ' + csvFileData.error);
+        if (formData.csvPath) {
+            // Use existing file path
+            csvFilePath = formData.csvPath;
+            updateEnsembleTrainingStatus('Using selected CSV file...', 10);
+        } else if (formData.csvFile) {
+            // Upload new file
+            updateEnsembleTrainingStatus('Uploading CSV file...', 10);
+            const csvFileData = await uploadCsvFile(formData.csvFile);
+            if (!csvFileData.success) {
+                throw new Error('Failed to upload CSV file: ' + csvFileData.error);
+            }
+            csvFilePath = csvFileData.file_path;
+        } else {
+            throw new Error('No CSV file selected. Please select a file from the available files list or upload a new file.');
         }
         
         // Update status
@@ -695,7 +810,7 @@ async function startEnsembleTraining(formData) {
             formData.ensembleType,
             formData.ensembleName,
             formData.selectedModels,
-            csvFileData.file_path,
+            csvFilePath,
             formData.weights,
             formData.advancedOptions
         )();
@@ -762,11 +877,13 @@ async function monitorEnsembleTrainingProgress(trainingId) {
                 console.log('Ensemble training completed');
                 showNotification('Ensemble training completed successfully!', 'success');
                 ensembleTrainingInProgress = false;
+                hideEnsembleTrainingProgress();
                 loadEnsembleTrainingHistory();
             } else if (status.status === 'failed' || status.status === 'error') {
                 console.error('Ensemble training failed:', status.message);
                 showNotification('Ensemble training failed: ' + status.message, 'error');
                 ensembleTrainingInProgress = false;
+                hideEnsembleTrainingProgress();
             } else {
                 // Continue monitoring
                 setTimeout(() => monitorEnsembleTrainingProgress(trainingId), 2000);
@@ -775,6 +892,7 @@ async function monitorEnsembleTrainingProgress(trainingId) {
     } catch (error) {
         console.error('Error monitoring ensemble training:', error);
         ensembleTrainingInProgress = false;
+        hideEnsembleTrainingProgress();
     }
 }
 
@@ -836,6 +954,21 @@ function resetEnsembleForm() {
     document.getElementById('ensemble-name').value = '';
     document.getElementById('ensemble-csv-file').value = '';
     
+    // Clear CSV file selection
+    document.querySelectorAll('#ensemble-available-csv-files .csv-file-item').forEach(item => {
+        item.classList.remove('selected');
+    });
+    
+    // Reset file input display
+    const fileDisplay = document.querySelector('#ensemble-training-content .file-input-display');
+    const fileText = document.querySelector('#ensemble-training-content .file-input-text');
+    const fileIcon = document.querySelector('#ensemble-training-content .file-input-icon');
+    if (fileDisplay && fileText && fileIcon) {
+        fileDisplay.classList.remove('has-file');
+        fileText.textContent = 'Choose CSV file or drag & drop';
+        fileIcon.textContent = '📁';
+    }
+    
     // Clear model selection
     clearModelSelection();
     
@@ -877,6 +1010,224 @@ function showModelSelectionError(message) {
         console.log('[ENSEMBLE] Error message displayed');
     } else {
         console.error('[ENSEMBLE] model-selection-list element not found for error display');
+    }
+}
+
+/**
+ * Load available CSV files
+ */
+async function loadAvailableCSVFiles() {
+    try {
+        const csvFiles = await eel.get_available_csv_files()();
+        displayCSVFiles(csvFiles);
+    } catch (error) {
+        console.error('Error loading CSV files:', error);
+        displayCSVFilesError();
+    }
+}
+
+/**
+ * Display CSV files in the UI
+ */
+function displayCSVFiles(csvFiles) {
+    const container = document.getElementById('ensemble-available-csv-files');
+    if (!container) return;
+
+    if (csvFiles.length === 0) {
+        container.innerHTML = '<div class="no-files">No CSV files found in the project directory.</div>';
+        return;
+    }
+
+    container.innerHTML = csvFiles.map(file => `
+        <div class="csv-file-item" data-path="${file.path}">
+            <div class="csv-file-info">
+                <div class="csv-file-name">${file.name}</div>
+                <div class="csv-file-details">
+                    Modified: ${new Date(file.modified).toLocaleString()}
+                </div>
+            </div>
+            <div class="csv-file-size">${formatFileSize(file.size)}</div>
+        </div>
+    `).join('');
+
+    // Add click handlers for CSV file selection
+    container.querySelectorAll('.csv-file-item').forEach(item => {
+        item.addEventListener('click', () => {
+            selectCSVFile(item);
+        });
+    });
+}
+
+/**
+ * Display CSV files error
+ */
+function displayCSVFilesError() {
+    const container = document.getElementById('ensemble-available-csv-files');
+    if (container) {
+        container.innerHTML = '<div class="error">Error loading CSV files. Please check the console for details.</div>';
+    }
+}
+
+/**
+ * Select CSV file from available files list
+ */
+function selectCSVFile(item) {
+    // Remove previous selection
+    document.querySelectorAll('#ensemble-available-csv-files .csv-file-item').forEach(i => {
+        i.classList.remove('selected');
+    });
+
+    // Add selection to clicked item
+    item.classList.add('selected');
+
+    // Update file input
+    const filePath = item.dataset.path;
+    const fileInput = document.getElementById('ensemble-csv-file');
+    if (fileInput) {
+        // Create a fake file object for the selected CSV
+        const fileName = filePath.split('/').pop();
+        const fakeFile = new File([''], fileName, { type: 'text/csv' });
+        const dataTransfer = new DataTransfer();
+        dataTransfer.items.add(fakeFile);
+        fileInput.files = dataTransfer.files;
+        
+        // Update display
+        handleCsvFileChange({ target: fileInput });
+        
+        // Trigger validation
+        validateEnsembleForm();
+    }
+}
+
+/**
+ * Format file size
+ */
+function formatFileSize(bytes) {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+}
+
+/**
+ * Convert file to base64
+ */
+function fileToBase64(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        reader.onload = () => {
+            // Remove the data URL prefix (data:type;base64,)
+            const base64 = reader.result.split(',')[1];
+            resolve(base64);
+        };
+        reader.onerror = error => reject(error);
+    });
+}
+
+/**
+ * Clear all validation errors
+ */
+function clearValidationErrors() {
+    // Remove error classes from all form elements
+    const errorElements = document.querySelectorAll('.field-error, .error-indicator');
+    errorElements.forEach(el => el.remove());
+    
+    // Clear error classes from form groups
+    const formGroups = document.querySelectorAll('.form-group');
+    formGroups.forEach(group => {
+        group.classList.remove('has-error');
+        const errorMsg = group.querySelector('.error-message');
+        if (errorMsg) errorMsg.remove();
+    });
+}
+
+/**
+ * Highlight field error
+ */
+function highlightFieldError(fieldId, message) {
+    const field = document.getElementById(fieldId);
+    if (!field) return;
+    
+    // Find the form group containing this field
+    let formGroup = field.closest('.form-group');
+    if (!formGroup) {
+        // If no form group, create one or use the field itself
+        formGroup = field;
+    }
+    
+    // Add error class to form group
+    formGroup.classList.add('has-error');
+    
+    // Add error indicator
+    const errorIndicator = document.createElement('div');
+    errorIndicator.className = 'error-indicator';
+    errorIndicator.innerHTML = `⚠️ ${message}`;
+    
+    // Insert error indicator after the field
+    if (field.nextSibling) {
+        formGroup.insertBefore(errorIndicator, field.nextSibling);
+    } else {
+        formGroup.appendChild(errorIndicator);
+    }
+}
+
+/**
+ * Clear field error
+ */
+function clearFieldError(fieldId) {
+    const field = document.getElementById(fieldId);
+    if (!field) return;
+    
+    // Find the form group containing this field
+    let formGroup = field.closest('.form-group');
+    if (!formGroup) {
+        formGroup = field;
+    }
+    
+    // Remove error class
+    formGroup.classList.remove('has-error');
+    
+    // Remove error indicator
+    const errorIndicator = formGroup.querySelector('.error-indicator');
+    if (errorIndicator) {
+        errorIndicator.remove();
+    }
+}
+
+/**
+ * Show validation error summary
+ */
+function showValidationErrorSummary(errors) {
+    // Remove existing error summary
+    const existingSummary = document.getElementById('validation-error-summary');
+    if (existingSummary) {
+        existingSummary.remove();
+    }
+    
+    if (errors.length === 0) {
+        return;
+    }
+    
+    // Create error summary
+    const errorSummary = document.createElement('div');
+    errorSummary.id = 'validation-error-summary';
+    errorSummary.className = 'validation-error-summary';
+    
+    const errorList = errors.map(error => `<li>${error}</li>`).join('');
+    errorSummary.innerHTML = `
+        <div class="error-summary-header">
+            <span class="error-icon">⚠️</span>
+            <strong>Please fix the following errors:</strong>
+        </div>
+        <ul class="error-list">${errorList}</ul>
+    `;
+    
+    // Insert error summary at the top of the form
+    const form = document.getElementById('ensemble-training-form');
+    if (form) {
+        form.insertBefore(errorSummary, form.firstChild);
     }
 }
 

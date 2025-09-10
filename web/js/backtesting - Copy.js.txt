@@ -464,37 +464,19 @@ class Backtesting {
             return;
         }
 
-        // Handle both old format (array of PnL values) and new format (array of trade objects)
+        // NEW LOGIC: Iterate over the detailed trades array
         const tradeItems = this.trades.map((trade, index) => {
-            let isWin, tradeType, pnlClass, entryPrice, exitPrice, pnl, timestamp;
-            
-            if (typeof trade === 'object' && trade !== null) {
-                // New format: trade object with detailed information
-                isWin = trade.pnl > 0;
-                tradeType = trade.type ? trade.type.toLowerCase() : 'unknown';
-                pnlClass = isWin ? 'positive' : 'negative';
-                entryPrice = trade.entry_price || 0;
-                exitPrice = trade.exit_price || 0;
-                pnl = trade.pnl || 0;
-                timestamp = trade.timestamp || new Date().toLocaleString();
-            } else {
-                // Old format: simple PnL value
-                isWin = trade > 0;
-                tradeType = trade > 0 ? 'long' : 'short';
-                pnlClass = isWin ? 'positive' : 'negative';
-                entryPrice = 0;
-                exitPrice = 0;
-                pnl = Math.abs(trade);
-                timestamp = new Date().toLocaleString();
-            }
-            
+            const isWin = trade.pnl > 0;
+            const pnlClass = isWin ? 'positive' : 'negative';
+            const tradeTypeClass = trade.type.toLowerCase();
+
             return `
-                <div class="trade-item ${isWin ? 'win' : 'loss'}" data-trade-info="Trade ${index + 1}">
-                    <div class="trade-datetime">${timestamp}</div>
-                    <div class="trade-type ${tradeType}">${tradeType.toUpperCase()}</div>
-                    <div class="trade-entry">$${entryPrice.toFixed(2)}</div>
-                    <div class="trade-exit">$${exitPrice.toFixed(2)}</div>
-                    <div class="trade-pnl ${pnlClass}">$${pnl.toFixed(2)}</div>
+                <div class="trade-item ${isWin ? 'win' : 'loss'}" data-trade-info="${trade.exit_reason}">
+                    <div class="trade-datetime">${trade.timestamp}</div>
+                    <div class="trade-type ${tradeTypeClass}">${trade.type}</div>
+                    <div class="trade-entry">$${trade.entry_price.toFixed(2)}</div>
+                    <div class="trade-exit">$${trade.exit_price.toFixed(2)}</div>
+                    <div class="trade-pnl ${pnlClass}">$${trade.pnl.toFixed(2)}</div>
                 </div>
             `;
         }).join('');
@@ -507,40 +489,29 @@ class Backtesting {
             this.showNotification('No trades to export', 'warning');
             return;
         }
-
+        
+        // NEW LOGIC: Use detailed trade data for the CSV
         const csvContent = [
-            ['Trade #', 'Type', 'Entry Price', 'Exit Price', 'P&L', 'Date'],
-            ...this.trades.map((trade, index) => {
-                if (typeof trade === 'object' && trade !== null) {
-                    // New format: trade object with detailed information
-                    return [
-                        index + 1,
-                        trade.type || 'UNKNOWN',
-                        `$${(trade.entry_price || 0).toFixed(2)}`,
-                        `$${(trade.exit_price || 0).toFixed(2)}`,
-                        `$${(trade.pnl || 0).toFixed(2)}`,
-                        trade.timestamp || new Date().toLocaleString()
-                    ];
-                } else {
-                    // Old format: simple PnL value
-                    return [
-                        index + 1,
-                        trade > 0 ? 'LONG' : 'SHORT',
-                        '$0.00',
-                        '$0.00',
-                        `$${Math.abs(trade).toFixed(2)}`,
-                        new Date().toLocaleString()
-                    ];
-                }
-            })
+            ['Trade #', 'Type', 'Entry Price', 'Exit Price', 'P&L', 'Timestamp', 'Exit Reason'],
+            ...this.trades.map((trade, index) => [
+                index + 1,
+                trade.type,
+                trade.entry_price.toFixed(2),
+                trade.exit_price.toFixed(2),
+                trade.pnl.toFixed(2),
+                trade.timestamp,
+                trade.exit_reason
+            ])
         ].map(row => row.join(',')).join('\n');
 
-        const blob = new Blob([csvContent], { type: 'text/csv' });
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
         a.download = `backtest_trades_${new Date().toISOString().split('T')[0]}.csv`;
+        document.body.appendChild(a);
         a.click();
+        document.body.removeChild(a);
         window.URL.revokeObjectURL(url);
         
         this.showNotification('Trades exported successfully!', 'success');

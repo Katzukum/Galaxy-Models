@@ -16,9 +16,9 @@ from NetworkConfigs.EnsembleTrainer import run_ensemble_training
 eel.init('web')
 
 # Debug configuration
-DEBUG_TRAINING = True  # Set to True to open command windows for training subprocesses
-DEBUG_API = True       # Set to True to open command windows for API subprocesses
-DEBUG_VERBOSE = True   # Set to True for additional debug output
+DEBUG_TRAINING = False  # Set to True to open command windows for training subprocesses
+DEBUG_API = False       # Set to True to open command windows for API subprocesses
+DEBUG_VERBOSE = False   # Set to True for additional debug output
 
 # Debug helper function
 def debug_print(message):
@@ -96,10 +96,30 @@ def run_ensemble_training_thread(training_id, ensemble_type, ensemble_name, sele
         debug_print(f"Starting ensemble training thread: {training_id}")
         debug_print(f"CSV path received: {csv_path}")
         
+        # Initialize training status
+        training_status[training_id] = {
+            'status': 'running',
+            'message': 'Starting ensemble training...',
+            'progress': 0
+        }
+        training_logs[training_id] = []
+        
         # Validate CSV file exists
         if not csv_path or not os.path.exists(csv_path):
             debug_print(f"CSV file not found: {csv_path}")
+            training_status[training_id] = {
+                'status': 'failed',
+                'message': f'CSV file not found: {csv_path}',
+                'progress': 0
+            }
             return
+        
+        # Update status
+        training_status[training_id] = {
+            'status': 'running',
+            'message': 'Loading models and preparing data...',
+            'progress': 20
+        }
         
         # Call the actual ensemble training function
         success = run_ensemble_training(
@@ -114,11 +134,26 @@ def run_ensemble_training_thread(training_id, ensemble_type, ensemble_name, sele
         
         if success:
             debug_print(f"Ensemble training completed successfully: {training_id}")
+            training_status[training_id] = {
+                'status': 'completed',
+                'message': 'Ensemble training completed successfully!',
+                'progress': 100
+            }
         else:
             debug_print(f"Ensemble training failed: {training_id}")
+            training_status[training_id] = {
+                'status': 'failed',
+                'message': 'Ensemble training failed',
+                'progress': 0
+            }
             
     except Exception as e:
         debug_print(f"Ensemble training thread error: {e}")
+        training_status[training_id] = {
+            'status': 'failed',
+            'message': f'Error: {str(e)}',
+            'progress': 0
+        }
 
 @eel.expose
 def get_ensemble_training_history():
@@ -161,6 +196,7 @@ def get_models():
             # Extract model_name and Type using recursive key finding
             model_name = config.find_key('model_name', 'Unknown Model')
             model_type = config.find_key('Type', 'Unknown Type')
+            
             debug_print(f"Extracted - Name: {model_name}, Type: {model_type}")
             
             model_info = {
@@ -528,6 +564,7 @@ def run_backtest(backtest_params):
         backtester.load_artifacts()
         
         # Run backtest and capture results
+        print("Starting backtest...")
         results = backtester.run_with_results(
             initial_capital=initial_capital,
             take_profit_pips=take_profit_pips,
@@ -535,6 +572,10 @@ def run_backtest(backtest_params):
             tick_size=tick_size,
             tick_value=tick_value
         )
+        
+        print(f"Backtest completed. Results: {results}")
+        print(f"Number of trades: {len(results.get('trades', []))}")
+        print(f"Equity history length: {len(results.get('equity_history', []))}")
         
         return {
             'success': True,

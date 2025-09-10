@@ -105,7 +105,7 @@ class XGBoostModelLoader:
         delta_feature_dict = feature_dict.copy()
         for col in ['close', 'open', 'high', 'low']:
             if col in delta_feature_dict:
-                delta_feature_dict[col] = feature_dict[col] - self.previous_feature_dict[col]
+                delta_feature_dict[col] = feature_dict[col] - self.previous_feature_dict.get(col, feature_dict[col])
 
         # Update the history
         self.previous_feature_dict = feature_dict
@@ -138,7 +138,7 @@ class XGBoostModelLoader:
         delta_feature_dict = feature_dict.copy()
         for col in ['close', 'open', 'high', 'low']:
             if col in delta_feature_dict:
-                delta_feature_dict[col] = feature_dict[col] - self.previous_feature_dict[col]
+                delta_feature_dict[col] = feature_dict[col] - self.previous_feature_dict.get(col, feature_dict[col])
 
         # Update the history
         self.previous_feature_dict = feature_dict
