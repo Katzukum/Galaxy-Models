@@ -1,0 +1,6 @@
+test_NN_nn_20250909_202659:
+  type: NNModelLoader
+  config_path: null
+test_Transformer_30Sec_NQ_SuperCCI:
+  type: TransformerModelLoader
+  config_path: null

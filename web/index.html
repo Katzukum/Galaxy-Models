@@ -502,14 +502,25 @@
                             <div class="form-group">
                                 <label for="ensemble-csv-file">Training Data</label>
                                 <div class="file-input-container">
-                                    <input type="file" id="ensemble-csv-file" name="ensemble-csv-file" accept=".csv" required>
+                                    <input type="file" id="ensemble-csv-file" name="ensemble-csv-file" accept=".csv">
                                     <div class="file-input-display">
                                         <span class="file-input-text">Choose CSV file or drag & drop</span>
                                         <span class="file-input-icon">📁</span>
                                     </div>
                                 </div>
                                 <div class="form-help">
-                                    <span>Upload CSV file with features for ensemble training</span>
+                                    Select a CSV file containing your training data. You can either upload a new file or select from the available files list below. The file should have appropriate columns for the selected model type.
+                                </div>
+                            </div>
+
+                            <!-- Available CSV Files -->
+                            <div class="form-group">
+                                <label>Available CSV Files</label>
+                                <div class="form-help">
+                                    Click on any file below to select it for training, or upload a new file above.
+                                </div>
+                                <div id="ensemble-available-csv-files" class="csv-files-list">
+                                    <div class="loading">Loading available CSV files...</div>
                                 </div>
                             </div>
 

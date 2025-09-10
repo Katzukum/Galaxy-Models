@@ -69,6 +69,17 @@ class Backtester:
         self.model_type = None
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+    def _get_timestamp(self, df, index):
+        """Get timestamp from dataframe, handling different column formats"""
+        if 'datetime' in df.columns:
+            return str(df.loc[index, 'datetime'])
+        elif 'date' in df.columns and 'time' in df.columns:
+            date_str = str(df.loc[index, 'date'])
+            time_str = str(df.loc[index, 'time'])
+            return f"{date_str} {time_str}"
+        else:
+            return str(index)
+
     def load_artifacts(self):
         """Loads model, scaler, and config from the YAML file."""
         print("--- Loading Artifacts ---")
@@ -82,42 +93,74 @@ class Backtester:
         artifact_paths = self.config.find_key('artifact_paths')
         original_config = self.config.find_key('Config')
 
-        # Load scaler
-        scaler_path = os.path.join(self.model_dir, artifact_paths['scaler'])
+        # Handle ensemble models differently
+        if self.model_type == 'Ensemble Model':
+            self._load_ensemble_artifacts(artifact_paths, original_config)
+        else:
+            # Load scaler for individual models
+            scaler_path = os.path.join(self.model_dir, artifact_paths['scaler'])
+            with open(scaler_path, 'rb') as f:
+                self.scaler = pickle.load(f)
+            print("Scaler loaded.")
+
+            # Load model based on type
+            model_key = 'model' if 'model' in artifact_paths else 'model_state_dict'
+            model_path = os.path.join(self.model_dir, artifact_paths[model_key])
+
+            if self.model_type == 'Time-Series Transformer':
+                self.model = TimeSeriesTransformer(**original_config['model_params'])
+                self.model.load_state_dict(torch.load(model_path, map_location=self.device))
+            elif self.model_type == 'XGBoostClassifier':
+                self.model = xgb.XGBClassifier()
+                self.model.load_model(model_path)
+            elif self.model_type == 'Neural Network (Regression)':
+                self.model = build_nn_from_config(original_config['architecture'])
+                self.model.load_state_dict(torch.load(model_path, map_location=self.device))
+            elif self.model_type == 'PPO Agent':
+                # Load PPO model
+                model_params = original_config['model_params']
+                self.model = PPONetwork(
+                    input_dim=model_params['input_dim'] + 3,  # +3 for account state
+                    hidden_dim=model_params['hidden_dim'],
+                    num_actions=model_params['num_actions']
+                )
+                self.model.load_state_dict(torch.load(model_path, map_location=self.device))
+            else:
+                raise ValueError(f"Unsupported model type: {self.model_type}")
+            
+            if isinstance(self.model, nn.Module):
+                self.model.to(self.device)
+                self.model.eval()
+            
+            print("Model loaded successfully.")
+
+    def _load_ensemble_artifacts(self, artifact_paths, original_config):
+        """Load artifacts for ensemble models."""
+        from NetworkConfigs.Ensemble_loader import EnsembleModelLoader
+        
+        # Load the ensemble model using the EnsembleModelLoader
+        self.ensemble_loader = EnsembleModelLoader(self.model_dir)
+        
+        # For ensemble models, we'll use the first component model's scaler
+        # as a reference for data preprocessing
+        first_model = self.ensemble_loader.selected_models[0]
+        first_model_dir = os.path.dirname(first_model['configPath'])
+        
+        # Load the first model's scaler as reference
+        first_model_config = load_yaml_config(first_model['configPath'])
+        first_model_artifact_paths = first_model_config.find_key('artifact_paths')
+        scaler_path = os.path.join(first_model_dir, first_model_artifact_paths['scaler'])
+        
         with open(scaler_path, 'rb') as f:
             self.scaler = pickle.load(f)
-        print("Scaler loaded.")
-
-        # Load model based on type
-        model_key = 'model' if 'model' in artifact_paths else 'model_state_dict'
-        model_path = os.path.join(self.model_dir, artifact_paths[model_key])
-
-        if self.model_type == 'Time-Series Transformer':
-            self.model = TimeSeriesTransformer(**original_config['model_params'])
-            self.model.load_state_dict(torch.load(model_path, map_location=self.device))
-        elif self.model_type == 'XGBoostClassifier':
-            self.model = xgb.XGBClassifier()
-            self.model.load_model(model_path)
-        elif self.model_type == 'Neural Network (Regression)':
-            self.model = build_nn_from_config(original_config['architecture'])
-            self.model.load_state_dict(torch.load(model_path, map_location=self.device))
-        elif self.model_type == 'PPO Agent':
-            # Load PPO model
-            model_params = original_config['model_params']
-            self.model = PPONetwork(
-                input_dim=model_params['input_dim'] + 3,  # +3 for account state
-                hidden_dim=model_params['hidden_dim'],
-                num_actions=model_params['num_actions']
-            )
-            self.model.load_state_dict(torch.load(model_path, map_location=self.device))
-        else:
-            raise ValueError(f"Unsupported model type: {self.model_type}")
+        print("Ensemble scaler (from first model) loaded.")
         
-        if isinstance(self.model, nn.Module):
-            self.model.to(self.device)
-            self.model.eval()
+        # Set model to None since we'll use ensemble_loader for predictions
+        self.model = None
+        print("Ensemble model loaded successfully.")
         
-        print("Model loaded successfully.")
+        # Initialize ensemble prediction method
+        self._ensemble_prediction_count = 0
 
     def run(self, initial_capital=50000, take_profit_pips=50, stop_loss_pips=25, tick_size=0.25, tick_value=5):
         """Executes the backtest."""
@@ -125,6 +168,9 @@ class Backtester:
 
         # 1. Load and prepare data
         df = pd.read_csv(self.data_path)
+        
+        # Convert column names to lowercase to match model expectations
+        df.columns = df.columns.str.lower()
         
         # Gracefully handle different config structures for features
         model_features = None
@@ -140,6 +186,9 @@ class Backtester:
         # Verify features
         if not all(feature in df.columns for feature in model_features):
             missing_features = [f for f in model_features if f not in df.columns]
+            print(f"Available columns: {list(df.columns)}")
+            print(f"Required features: {model_features}")
+            print(f"Missing features: {missing_features}")
             raise ValueError(f"Dataframe is missing required features: {missing_features}")
 
         features_df = df[model_features].copy()
@@ -155,8 +204,16 @@ class Backtester:
         seq_length = 1
         if self.model_type == 'Time-Series Transformer':
             seq_length = self.config['Config']['data_params']['sequence_length']
+        elif self.model_type == 'PPO Agent':
+            seq_length = self.config['Config']['model_params'].get('lookback_window', 60)
+        elif self.model_type == 'Ensemble Model':
+            # For ensemble models, use the maximum sequence length of component models
+            seq_length = 60  # Transformer needs 60, others need 1
 
-        for i in range(seq_length, len(features_df)):
+        # For ensemble models, skip the first 60 rows to allow history buffer to build up
+        start_index = 60 if self.model_type == 'Ensemble Model' else 0
+
+        for i in range(max(seq_length, start_index), len(features_df)):
             current_price = df.loc[i, 'close']
 
             # Check for take-profit or stop-loss
@@ -165,17 +222,25 @@ class Backtester:
                 trade_closed = False
                 if position == 1:  # Long
                     if current_price >= entry_price + (take_profit_pips * tick_size):
-                        pnl = (current_price - entry_price) * tick_value
+                        price_difference = current_price - entry_price
+                        number_of_ticks = price_difference / tick_size
+                        pnl = number_of_ticks * tick_value
                         trade_closed = True
                     elif current_price <= entry_price - (stop_loss_pips * tick_size):
-                        pnl = (current_price - entry_price) * tick_value
+                        price_difference = current_price - entry_price
+                        number_of_ticks = price_difference / tick_size
+                        pnl = number_of_ticks * tick_value
                         trade_closed = True
                 elif position == -1:  # Short
                     if current_price <= entry_price - (take_profit_pips * tick_size):
-                        pnl = (entry_price - current_price) * tick_value
+                        price_difference = entry_price - current_price
+                        number_of_ticks = price_difference / tick_size
+                        pnl = number_of_ticks * tick_value
                         trade_closed = True
                     elif current_price >= entry_price + (stop_loss_pips * tick_size):
-                        pnl = (entry_price - current_price) * tick_value
+                        price_difference = entry_price - current_price
+                        number_of_ticks = price_difference / tick_size
+                        pnl = number_of_ticks * tick_value
                         trade_closed = True
                 
                 if trade_closed:
@@ -184,7 +249,11 @@ class Backtester:
                     position = 0
             
             # Prepare input data for prediction (needed for both position checking and new signals)
-            if self.model_type == 'Time-Series Transformer':
+            if self.model_type == 'Ensemble Model':
+                # For ensemble models, we need to prepare data for each component model
+                input_data = features_df.iloc[[i]].values  # Use single row for ensemble
+                scaled_input = self.scaler.transform(input_data)
+            elif self.model_type == 'Time-Series Transformer':
                 input_data = features_df.iloc[i-seq_length:i].values
                 scaled_input = self.scaler.transform(input_data)
             elif self.model_type == 'PPO Agent':
@@ -197,7 +266,20 @@ class Backtester:
 
             # Generate prediction based on model type
             prediction = None
-            if self.model_type == 'XGBoostClassifier':
+            if self.model_type == 'Ensemble Model':
+                # Convert numpy array to feature dictionary for ensemble prediction
+                feature_dict = dict(zip(model_features, scaled_input[0]))
+                try:
+                    prediction = self.ensemble_loader.predict(feature_dict)
+                    if i < 5:  # Debug first few predictions
+                        print(f"Debug - Row {i}: prediction = {prediction}, current_price = {current_price}")
+                except Exception as e:
+                    if i < 5:  # Debug first few predictions
+                        print(f"Debug - Row {i}: prediction failed - {e}")
+                    # For ensemble models, we might not have enough data for all models initially
+                    # Set prediction to 0 and continue with the loop
+                    prediction = 0.0
+            elif self.model_type == 'XGBoostClassifier':
                 prediction = self.model.predict(scaled_input)
             
             elif isinstance(self.model, nn.Module):
@@ -211,7 +293,14 @@ class Backtester:
             # Check for opposite signals if still in position
             if position != 0:
                 opposite_signal = False
-                if self.model_type == 'Time-Series Transformer':
+                if self.model_type == 'Ensemble Model':
+                    # For ensemble models, treat prediction as a delta (price change)
+                    predicted_delta = prediction
+                    if position == 1 and predicted_delta < -(2 * tick_size):  # Long position, sell signal
+                        opposite_signal = True
+                    elif position == -1 and predicted_delta > (2 * tick_size):  # Short position, buy signal
+                        opposite_signal = True
+                elif self.model_type == 'Time-Series Transformer':
                     pred_price_scaled = prediction.cpu().numpy().flatten()[0]
                     dummy_array = np.zeros((1, len(model_features)))
                     dummy_array[0, 0] = pred_price_scaled
@@ -226,7 +315,7 @@ class Backtester:
                     action = int(prediction[0])
                     if position == 1 and action == 0:  # Long position, Strong Sell signal
                         opposite_signal = True
-                    elif position == -1 and action == 4:  # Short position, Strong Buy signal
+                    elif position == -1 and action == 2:  # Short position, Strong Buy signal
                         opposite_signal = True
 
                 elif self.model_type == 'Neural Network (Regression)':
@@ -236,12 +325,23 @@ class Backtester:
                     elif position == -1 and predicted_tick_change > 2:  # Short position, positive tick change
                         opposite_signal = True
 
+                elif self.model_type == 'PPO Agent':
+                    action = prediction  # prediction is already the action (0: hold, 1: buy, 2: sell)
+                    if position == 1 and action == 2:  # Long position, Sell signal
+                        opposite_signal = True
+                    elif position == -1 and action == 1:  # Short position, Buy signal
+                        opposite_signal = True
+
                 if opposite_signal:
                     # Calculate PnL for opposite signal exit
                     if position == 1:  # Long
-                        pnl = (current_price - entry_price) * tick_value
+                        price_difference = current_price - entry_price
+                        number_of_ticks = price_difference / tick_size
+                        pnl = number_of_ticks * tick_value
                     else:  # Short
-                        pnl = (entry_price - current_price) * tick_value
+                        price_difference = entry_price - current_price
+                        number_of_ticks = price_difference / tick_size
+                        pnl = number_of_ticks * tick_value
                     capital += pnl
                     trades.append(pnl)
                     position = 0
@@ -249,34 +349,50 @@ class Backtester:
             # If flat, look for a new signal
             if position == 0:
                 # Take action based on model type and prediction
-                if self.model_type == 'Time-Series Transformer':
+                if self.model_type == 'Ensemble Model':
+                    # For ensemble models, treat prediction as a delta (price change)
+                    predicted_delta = prediction
+                    predicted_price = current_price + predicted_delta
+                    price_diff = predicted_delta
+                    threshold = 1 * tick_size  # Much more sensitive threshold for delta predictions
+                    if i < 5:  # Debug first few predictions
+                        print(f"Debug - Signal check: predicted_delta={predicted_delta:.6f}, current_price={current_price}, predicted_price={predicted_price:.2f}, threshold={threshold}")
+                    if predicted_delta > threshold:
+                        position = 1
+                        entry_price = current_price
+                        print(f"Debug - BUY signal triggered at row {i}")
+                    elif predicted_delta < -threshold:
+                        position = -1
+                        entry_price = current_price
+                        print(f"Debug - SELL signal triggered at row {i}")
+                elif self.model_type == 'Time-Series Transformer':
                     pred_price_scaled = prediction.cpu().numpy().flatten()[0]
                     dummy_array = np.zeros((1, len(model_features)))
                     dummy_array[0, 0] = pred_price_scaled
                     predicted_price = self.scaler.inverse_transform(dummy_array)[0, 0]
 
-                    if predicted_price > current_price + (2 * tick_size):
+                    if predicted_price > current_price + (20 * tick_size):
                         position = 1
                         entry_price = current_price
-                    elif predicted_price < current_price - (2 * tick_size):
+                    elif predicted_price < current_price - (20 * tick_size):
                         position = -1
                         entry_price = current_price
 
                 elif self.model_type == 'XGBoostClassifier':
                     action = int(prediction[0])
-                    if action == 4 or action == 3:  # Strong Buy
+                    if action == 2:  # Strong Buy
                         position = 1
                         entry_price = current_price
-                    elif action == 0 or action == 1:  # Strong Sell
+                    elif action == 0:  # Strong Sell
                         position = -1
                         entry_price = current_price
 
                 elif self.model_type == 'Neural Network (Regression)':
                     predicted_tick_change = prediction.cpu().numpy().flatten()[0]
-                    if predicted_tick_change > 2:
+                    if predicted_tick_change > 20:
                         position = 1
                         entry_price = current_price
-                    elif predicted_tick_change < -2:
+                    elif predicted_tick_change < -20:
                         position = -1
                         entry_price = current_price
 
@@ -287,19 +403,16 @@ class Backtester:
 
     def run_with_results(self, initial_capital=50000, take_profit_pips=50, stop_loss_pips=25, tick_size=0.25, tick_value=5):
         """Executes the backtest and returns results instead of printing them."""
-        print("\n--- Starting Backtest ---")
+        print("\n--- Starting Unified Backtest ---")
         print(f"Loading CSV from: {self.data_path}")
 
         # 1. Load and prepare data
         try:
             df = pd.read_csv(self.data_path)
             df.columns = df.columns.str.lower()
-            print(f"CSV loaded successfully. Shape: {df.shape}")
-            print(f"Columns: {list(df.columns)}")
         except Exception as e:
-            print(f"Error loading CSV: {e}")
             raise Exception(f"Failed to load CSV file: {e}")
-        
+
         # Gracefully handle different config structures for features
         model_features = None
         if 'data_params' in self.config['Config'] and 'features' in self.config['Config']['data_params']:
@@ -314,146 +427,318 @@ class Backtester:
         # Verify features
         if not all(feature in df.columns for feature in model_features):
             missing_features = [f for f in model_features if f not in df.columns]
+            print(f"Available columns: {list(df.columns)}")
+            print(f"Required features: {model_features}")
+            print(f"Missing features: {missing_features}")
             raise ValueError(f"Dataframe is missing required features: {missing_features}")
 
         features_df = df[model_features].copy()
 
-        # 2. Backtest loop
+        # 2. Backtest loop setup
         capital = initial_capital
         position = 0  # 1 for long, -1 for short, 0 for flat
         entry_price = 0
-        trades = []
+        trades = [] # This will now store dictionaries with full trade details
         equity_history = [initial_capital]
-
+        
         # Determine sequence length for sequence-based models
         seq_length = 1
         if self.model_type == 'Time-Series Transformer':
             seq_length = self.config['Config']['data_params']['sequence_length']
+        elif self.model_type == 'PPO Agent':
+            seq_length = self.config['Config']['model_params'].get('lookback_window', 60)
+        elif self.model_type == 'Ensemble Model':
+            # For ensemble models, use the maximum sequence length of component models
+            seq_length = 60  # Transformer needs 60, others need 1
 
-        for i in range(seq_length, len(features_df)):
+        # For ensemble models, skip the first 60 rows to allow history buffer to build up
+        start_index = 60 if self.model_type == 'Ensemble Model' else 0
+        
+        # Debug statistics
+        price_diffs = []
+        buy_signals = 0
+        sell_signals = 0
+        long_trades = 0
+        short_trades = 0
+        total_bars_analyzed = 0
+
+        for i in range(max(seq_length, start_index), len(features_df)):
             current_price = df.loc[i, 'close']
+            trade_closed_this_bar = False
+            total_bars_analyzed += 1
 
-            # Check for take-profit or stop-loss
+            # --- Part 1: Check for an EXIT on the current bar ---
             if position != 0:
                 pnl = 0
-                trade_closed = False
-                if position == 1:  # Long
+                exit_reason = None
+
+                # Condition 1: Take-Profit or Stop-Loss hit
+                if position == 1: # Long Position
                     if current_price >= entry_price + (take_profit_pips * tick_size):
-                        pnl = (current_price - entry_price) * tick_value
-                        trade_closed = True
+                        exit_reason = "Take Profit"
                     elif current_price <= entry_price - (stop_loss_pips * tick_size):
-                        pnl = (current_price - entry_price) * tick_value
-                        trade_closed = True
-                elif position == -1:  # Short
+                        exit_reason = "Stop Loss"
+                elif position == -1: # Short Position
                     if current_price <= entry_price - (take_profit_pips * tick_size):
-                        pnl = (entry_price - current_price) * tick_value
-                        trade_closed = True
+                        exit_reason = "Take Profit"
                     elif current_price >= entry_price + (stop_loss_pips * tick_size):
-                        pnl = (entry_price - current_price) * tick_value
-                        trade_closed = True
+                        exit_reason = "Stop Loss"
                 
-                if trade_closed:
+                # If TP/SL not hit, check for model-based exit signal (but only if we are still in a position)
+                if not exit_reason:
+                    # Prepare input data for prediction
+                    prediction_action = 0 # 0=hold, 1=buy, 2=sell
+                    
+                    # --- PPO Agent Prediction ---
+                    if self.model_type == 'PPO Agent':
+                        input_data = features_df.iloc[i-seq_length:i].values
+                        scaled_input = self.scaler.transform(input_data)
+                        account_state = np.array([capital / initial_capital, position, 0.0])
+                        account_state_broadcast = np.tile(account_state, (scaled_input.shape[0], 1))
+                        input_with_state = np.concatenate([scaled_input, account_state_broadcast], axis=1)
+                        input_tensor = torch.FloatTensor(input_with_state).unsqueeze(0).to(self.device)
+                        with torch.no_grad():
+                            action_logits, _ = self.model(input_tensor)
+                            prediction_action = torch.argmax(torch.softmax(action_logits, dim=-1)).item()
+                    
+                    # --- Other Model Types Prediction ---
+                    else:
+                        # Prepare input data for prediction
+                        if self.model_type == 'Ensemble Model':
+                            input_data = features_df.iloc[[i]].values
+                            scaled_input = self.scaler.transform(input_data)
+                        elif self.model_type == 'Time-Series Transformer':
+                            input_data = features_df.iloc[i-seq_length:i].values
+                            scaled_input = self.scaler.transform(input_data)
+                        else:  # XGBoost and NN
+                            input_data = features_df.iloc[[i]].values
+                            scaled_input = self.scaler.transform(input_data)
+
+                        # Generate prediction based on model type
+                        prediction = None
+                        if self.model_type == 'Ensemble Model':
+                            # Convert numpy array to feature dictionary for ensemble prediction
+                            feature_dict = dict(zip(model_features, scaled_input[0]))
+                            try:
+                                prediction = self.ensemble_loader.predict(feature_dict)
+                            except Exception as e:
+                                # Skip this prediction if not enough data
+                                prediction = 0.0
+                        elif self.model_type == 'XGBoostClassifier':
+                            prediction = self.model.predict(scaled_input)
+                        
+                        elif isinstance(self.model, nn.Module):
+                            input_tensor = torch.FloatTensor(scaled_input).to(self.device)
+                            if self.model_type == 'Time-Series Transformer':
+                                 input_tensor = input_tensor.unsqueeze(0)
+                                 
+                            with torch.no_grad():
+                                prediction = self.model(input_tensor)
+
+                        # Convert prediction to action based on model type
+                        if self.model_type == 'Ensemble Model':
+                            # For ensemble models, treat prediction as a delta (price change)
+                            predicted_delta = prediction
+                            if position == 1 and predicted_delta < -(1 * tick_size):  # Long position, sell signal
+                                prediction_action = 2
+                            elif position == -1 and predicted_delta > (1 * tick_size):  # Short position, buy signal
+                                prediction_action = 1
+                        elif self.model_type == 'Time-Series Transformer':
+                            pred_price_scaled = prediction.cpu().numpy().flatten()[0]
+                            dummy_array = np.zeros((1, len(model_features)))
+                            dummy_array[0, 0] = pred_price_scaled
+                            predicted_price = self.scaler.inverse_transform(dummy_array)[0, 0]
+
+                            if position == 1 and predicted_price < current_price - (2 * tick_size):  # Long position, sell signal
+                                prediction_action = 2
+                            elif position == -1 and predicted_price > current_price + (2 * tick_size):  # Short position, buy signal
+                                prediction_action = 1
+
+                        elif self.model_type == 'XGBoostClassifier':
+                            action = int(prediction[0])
+                            if position == 1 and action == 0:  # Long position, Strong Sell signal
+                                prediction_action = 2
+                            elif position == -1 and action == 2:  # Short position, Strong Buy signal
+                                prediction_action = 1
+
+                        elif self.model_type == 'Neural Network (Regression)':
+                            predicted_tick_change = prediction.cpu().numpy().flatten()[0]
+                            if position == 1 and predicted_tick_change < -2:  # Long position, negative tick change
+                                prediction_action = 2
+                            elif position == -1 and predicted_tick_change > 2:  # Short position, positive tick change
+                                prediction_action = 1
+                    
+                    # Check for opposite signal
+                    if (position == 1 and prediction_action == 2): # Long position, but model says Sell
+                        exit_reason = "Opposite Signal"
+                    elif (position == -1 and prediction_action == 1): # Short position, but model says Buy
+                        exit_reason = "Opposite Signal"
+
+                # If any exit condition was met, close the trade
+                if exit_reason:
+                    if position == 1: # Closing a long
+                        price_difference = current_price - entry_price
+                        pnl = (price_difference / tick_size) * tick_value
+                    else: # Closing a short
+                        price_difference = entry_price - current_price
+                        pnl = (price_difference / tick_size) * tick_value
+                    
                     capital += pnl
-                    trades.append(pnl)
+                    trade_type = 'LONG' if position == 1 else 'SHORT'
+                    trades.append({
+                        'pnl': pnl,
+                        'type': trade_type,
+                        'entry_price': entry_price,
+                        'exit_price': current_price,
+                        'exit_reason': exit_reason,
+                        'timestamp': self._get_timestamp(df, i) # Use a real timestamp if available
+                    })
+                    
+                    # Track trade direction
+                    if trade_type == 'LONG':
+                        long_trades += 1
+                    else:
+                        short_trades += 1
+                    
                     position = 0
-            
-            # Prepare input data for prediction
-            if self.model_type == 'Time-Series Transformer':
-                input_data = features_df.iloc[i-seq_length:i].values
-                scaled_input = self.scaler.transform(input_data)
-            else:  # XGBoost and NN
-                input_data = features_df.iloc[[i]].values
-                scaled_input = self.scaler.transform(input_data)
+                    entry_price = 0
+                    trade_closed_this_bar = True
 
-            # Generate prediction based on model type
-            prediction = None
-            if self.model_type == 'XGBoostClassifier':
-                prediction = self.model.predict(scaled_input)
-            
-            elif isinstance(self.model, nn.Module):
-                input_tensor = torch.FloatTensor(scaled_input).to(self.device)
-                if self.model_type == 'Time-Series Transformer':
-                     input_tensor = input_tensor.unsqueeze(0)
-                     
-                with torch.no_grad():
-                    prediction = self.model(input_tensor)
-
-            # Check for opposite signals if still in position
-            if position != 0:
-                opposite_signal = False
-                if self.model_type == 'Time-Series Transformer':
-                    pred_price_scaled = prediction.cpu().numpy().flatten()[0]
-                    dummy_array = np.zeros((1, len(model_features)))
-                    dummy_array[0, 0] = pred_price_scaled
-                    predicted_price = self.scaler.inverse_transform(dummy_array)[0, 0]
-
-                    if position == 1 and predicted_price < current_price - (2 * tick_size):  # Long position, sell signal
-                        opposite_signal = True
-                    elif position == -1 and predicted_price > current_price + (2 * tick_size):  # Short position, buy signal
-                        opposite_signal = True
-
-                elif self.model_type == 'XGBoostClassifier':
-                    action = int(prediction[0])
-                    if position == 1 and action == 0:  # Long position, Strong Sell signal
-                        opposite_signal = True
-                    elif position == -1 and action == 4:  # Short position, Strong Buy signal
-                        opposite_signal = True
-
-                elif self.model_type == 'Neural Network (Regression)':
-                    predicted_tick_change = prediction.cpu().numpy().flatten()[0]
-                    if position == 1 and predicted_tick_change < -2:  # Long position, negative tick change
-                        opposite_signal = True
-                    elif position == -1 and predicted_tick_change > 2:  # Short position, positive tick change
-                        opposite_signal = True
-
-                if opposite_signal:
-                    # Calculate PnL for opposite signal exit
-                    if position == 1:  # Long
-                        pnl = (current_price - entry_price) * tick_value
-                    else:  # Short
-                        pnl = (entry_price - current_price) * tick_value
-                    capital += pnl
-                    trades.append(pnl)
-                    position = 0
-            
-            # If flat, look for a new signal
+            # --- Part 2: Check for a new ENTRY if we are flat ---
             if position == 0:
-                # Take action based on model type and prediction
-                if self.model_type == 'Time-Series Transformer':
-                    pred_price_scaled = prediction.cpu().numpy().flatten()[0]
-                    dummy_array = np.zeros((1, len(model_features)))
-                    dummy_array[0, 0] = pred_price_scaled
-                    predicted_price = self.scaler.inverse_transform(dummy_array)[0, 0]
+                # Get model prediction. If a trade was just closed, we can reuse the prediction.
+                # Otherwise, we need to generate a new one.
+                # For simplicity, we'll just predict again. The performance impact is negligible.
+                prediction_action = 0 # 0=hold, 1=buy, 2=sell
 
-                    if predicted_price > current_price + (2 * tick_size):
-                        position = 1
-                        entry_price = current_price
-                    elif predicted_price < current_price - (2 * tick_size):
-                        position = -1
-                        entry_price = current_price
+                # --- PPO Agent Prediction ---
+                if self.model_type == 'PPO Agent':
+                    input_data = features_df.iloc[i-seq_length:i].values
+                    scaled_input = self.scaler.transform(input_data)
+                    account_state = np.array([capital / initial_capital, position, 0.0])
+                    account_state_broadcast = np.tile(account_state, (scaled_input.shape[0], 1))
+                    input_with_state = np.concatenate([scaled_input, account_state_broadcast], axis=1)
+                    input_tensor = torch.FloatTensor(input_with_state).unsqueeze(0).to(self.device)
+                    with torch.no_grad():
+                        action_logits, _ = self.model(input_tensor)
+                        prediction_action = torch.argmax(torch.softmax(action_logits, dim=-1)).item()
+                    
+                    # Track signals for PPO
+                    if prediction_action == 1:  # Buy
+                        buy_signals += 1
+                    elif prediction_action == 2:  # Sell
+                        sell_signals += 1
 
-                elif self.model_type == 'XGBoostClassifier':
-                    action = int(prediction[0])
-                    if action == 4 or action == 3:  # Strong Buy
-                        position = 1
-                        entry_price = current_price
-                    elif action == 0 or action == 1:  # Strong Sell
-                        position = -1
-                        entry_price = current_price
+                # --- Other Model Types Prediction ---
+                else:
+                    # Prepare input data for prediction
+                    if self.model_type == 'Ensemble Model':
+                        input_data = features_df.iloc[[i]].values
+                        scaled_input = self.scaler.transform(input_data)
+                    elif self.model_type == 'Time-Series Transformer':
+                        input_data = features_df.iloc[i-seq_length:i].values
+                        scaled_input = self.scaler.transform(input_data)
+                    elif self.model_type == 'PPO Agent':
+                        # Already handled above
+                        pass
+                    else:  # XGBoost and NN
+                        input_data = features_df.iloc[[i]].values
+                        scaled_input = self.scaler.transform(input_data)
 
-                elif self.model_type == 'Neural Network (Regression)':
-                    predicted_tick_change = prediction.cpu().numpy().flatten()[0]
-                    if predicted_tick_change > 2:
-                        position = 1
-                        entry_price = current_price
-                    elif predicted_tick_change < -2:
-                        position = -1
-                        entry_price = current_price
+                    # Generate prediction based on model type
+                    prediction = None
+                    if self.model_type == 'Ensemble Model':
+                        # Convert numpy array to feature dictionary for ensemble prediction
+                        feature_dict = dict(zip(model_features, scaled_input[0]))
+                        try:
+                            prediction = self.ensemble_loader.predict(feature_dict)
+                        except Exception as e:
+                            # Skip this prediction if not enough data
+                            prediction = 0.0
+                    elif self.model_type == 'XGBoostClassifier':
+                        prediction = self.model.predict(scaled_input)
+                    
+                    elif isinstance(self.model, nn.Module):
+                        input_tensor = torch.FloatTensor(scaled_input).to(self.device)
+                        if self.model_type == 'Time-Series Transformer':
+                             input_tensor = input_tensor.unsqueeze(0)
+                             
+                        with torch.no_grad():
+                            prediction = self.model(input_tensor)
 
+                    # Convert prediction to action based on model type
+                    if self.model_type == 'Ensemble Model':
+                        # For ensemble models, treat prediction as a delta (price change)
+                        predicted_delta = prediction
+                        predicted_price = current_price + predicted_delta
+                        # Calculate price difference and threshold
+                        price_diff = predicted_delta
+                        threshold = 1 * tick_size  # Much more sensitive threshold for delta predictions
+                        price_diffs.append(price_diff)
+                    elif self.model_type == 'Time-Series Transformer':
+                        pred_price_scaled = prediction.cpu().numpy().flatten()[0]
+                        dummy_array = np.zeros((1, len(model_features)))
+                        dummy_array[0, 0] = pred_price_scaled
+                        predicted_price = self.scaler.inverse_transform(dummy_array)[0, 0]
+
+                        # Calculate price difference and threshold
+                        price_diff = predicted_price - current_price
+                        threshold = 5 * tick_size  # Reduced from 20 to 5 for more sensitive signals
+                        price_diffs.append(price_diff)
+
+                        if predicted_price > current_price + threshold:
+                            prediction_action = 1  # Buy
+                            buy_signals += 1
+                        elif predicted_price < current_price - threshold:
+                            prediction_action = 2  # Sell
+                            sell_signals += 1
+
+                    elif self.model_type == 'XGBoostClassifier':
+                        action = int(prediction[0])
+                        if action == 2:  # Strong Buy
+                            prediction_action = 1
+                            buy_signals += 1
+                        elif action == 0:  # Strong Sell
+                            prediction_action = 2
+                            sell_signals += 1
+
+                    elif self.model_type == 'Neural Network (Regression)':
+                        predicted_tick_change = prediction.cpu().numpy().flatten()[0]
+                        if predicted_tick_change > 20:
+                            prediction_action = 1  # Buy
+                            buy_signals += 1
+                        elif predicted_tick_change < -20:
+                            prediction_action = 2  # Sell
+                            sell_signals += 1
+
+                if prediction_action == 1: # Buy signal
+                    position = 1
+                    entry_price = current_price
+                elif prediction_action == 2: # Sell signal
+                    position = -1
+                    entry_price = current_price
+            
+            # --- Part 3: Update equity curve at the end of each bar ---
             equity_history.append(capital)
 
-        # 3. Calculate metrics and return results
-        metrics = self.calculate_metrics_with_results(trades, initial_capital, np.array(equity_history))
+        # 3. Calculate final metrics and return all results
+        metrics = self.calculate_metrics_with_results([t['pnl'] for t in trades], initial_capital, np.array(equity_history))
+        
+        # Signal and Trade Summary
+        print(f"\n=== Model Signal Analysis ===")
+        print(f"📊 Total bars analyzed: {total_bars_analyzed:,}")
+        print(f"🟢 Bullish signals: {buy_signals:,} ({buy_signals/total_bars_analyzed*100:.1f}%)" if total_bars_analyzed > 0 else "🟢 Bullish signals: 0")
+        print(f"🔴 Bearish signals: {sell_signals:,} ({sell_signals/total_bars_analyzed*100:.1f}%)" if total_bars_analyzed > 0 else "🔴 Bearish signals: 0")
+        print(f"⚪ No signal: {total_bars_analyzed - buy_signals - sell_signals:,} ({(total_bars_analyzed - buy_signals - sell_signals)/total_bars_analyzed*100:.1f}%)" if total_bars_analyzed > 0 else "⚪ No signal: 0")
+        print(f"🎯 Signal threshold: ±{5 * tick_size:.2f} points")
+        
+        print(f"\n=== Trade Execution Summary ===")
+        print(f"📈 Total trades executed: {len(trades):,}")
+        print(f"🟢 LONG trades: {long_trades:,} ({long_trades/len(trades)*100:.1f}%)" if trades else "🟢 LONG trades: 0")
+        print(f"🔴 SHORT trades: {short_trades:,} ({short_trades/len(trades)*100:.1f}%)" if trades else "🔴 SHORT trades: 0")
+        
+        if trades and total_bars_analyzed > 0:
+            print(f"📊 Signal-to-Trade ratio: {(buy_signals + sell_signals)/len(trades):.1f}:1")
         
         return {
             'trades': trades,
@@ -544,13 +829,13 @@ if __name__ == '__main__':
     #config_file_path = './Models/test/test_config.yaml' # Assuming you have a 'test' folder
     
     # Example for XGBoost model
-    config_file_path = './Models/XGBoost_test/test_config.yaml'
+    config_file_path = './Models/XGBoost_30Sec_NQ_SuperCCI/30Sec_NQ_SuperCCI_config.yaml'
     
     # Example for Neural Network model
     #config_file_path = './Models/NN_test/test_config.yaml'
 
     # Path to the data file
-    csv_data_path = 'sample.csv' # Make sure this CSV has all the required columns
+    csv_data_path = 'uploads/16ebb85c-3cb5-4d58-ae59-9b8e709f4fb7_NQ_30sec_SuperCCI_Val.csv' # Make sure this CSV has all the required columns
 
     if not os.path.exists(config_file_path):
         print(f"Error: Configuration file not found at '{config_file_path}'")

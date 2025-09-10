@@ -39,6 +39,7 @@ class PPOModelLoader:
         self.model = None
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.history = deque(maxlen=60)  # Store last 60 observations for sequence models
+        self.previous_feature_dict = None  # Add state for delta calculation
         
         # Load the model
         self._load_model()
@@ -111,13 +112,26 @@ class PPOModelLoader:
             int: Predicted action (0=Hold, 1=Buy, 2=Sell)
         """
         try:
+            if self.previous_feature_dict is None:
+                self.previous_feature_dict = feature_dict
+                raise ValueError("Not enough historical data to calculate deltas. Received first data point.")
+
+            # Calculate deltas for price-related features
+            delta_feature_dict = feature_dict.copy()
+            for col in ['close', 'open', 'high', 'low']:
+                if col in delta_feature_dict:
+                    delta_feature_dict[col] = feature_dict[col] - self.previous_feature_dict[col]
+
+            # Update the history
+            self.previous_feature_dict = feature_dict
+            
             # Validate features
-            if not all(feature in feature_dict for feature in self.features):
-                missing_features = [f for f in self.features if f not in feature_dict]
+            if not all(feature in delta_feature_dict for feature in self.features):
+                missing_features = [f for f in self.features if f not in delta_feature_dict]
                 raise ValueError(f"Missing required features: {missing_features}")
             
             # Extract features in the correct order
-            feature_values = [feature_dict[feature] for feature in self.features]
+            feature_values = [delta_feature_dict[feature] for feature in self.features]
             
             # Add to history
             self.history.append(feature_values)

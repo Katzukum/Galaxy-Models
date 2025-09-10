@@ -49,6 +49,9 @@ class NNModelLoader:
         self.features: List[str] = self.config['Config']['features']
         self.architecture: List[Dict] = self.config['Config']['architecture']
         
+        # Add state for delta calculation
+        self.previous_feature_dict = None
+        
         artifact_paths = self.config['artifact_paths']
         scaler_path = os.path.join(model_dir, artifact_paths['scaler'])
         model_path = os.path.join(model_dir, artifact_paths['model'])
@@ -105,35 +108,29 @@ class NNModelLoader:
         Returns:
             float: The regression model's prediction.
         """
-        # --- 1. Validate and Order the Input Features ---
-        if sorted(feature_dict.keys()) != sorted(self.features):
-            raise ValueError(
-                "Input features do not match the features the model was trained on."
-                f"\nExpected: {self.features}"
-                f"\nGot: {list(feature_dict.keys())}"
-            )
-        
-        # Create a list of feature values in the correct order
-        ordered_values = [feature_dict[feature] for feature in self.features]
+        if self.previous_feature_dict is None:
+            self.previous_feature_dict = feature_dict
+            raise ValueError("Not enough historical data to calculate deltas. Received first data point.")
+            
+        delta_feature_dict = feature_dict.copy()
+        for col in ['close', 'open', 'high', 'low']:
+            if col in delta_feature_dict:
+                delta_feature_dict[col] = feature_dict[col] - self.previous_feature_dict.get(col, feature_dict[col])
 
-        # --- 2. Prepare Data for PyTorch (Scale and Convert to Tensor) ---
-        # Reshape to (1, n_features) for the scaler and model
+        self.previous_feature_dict = feature_dict
+        
+        # Use delta_feature_dict for prediction
+        ordered_values = [delta_feature_dict[feature] for feature in self.features]
         input_array = np.array(ordered_values).reshape(1, -1)
-        
-        # Scale the features
         scaled_array = self.scaler.transform(input_array)
-        
-        # Convert to a PyTorch tensor
         input_tensor = torch.FloatTensor(scaled_array)
         
-        # --- 3. Perform Inference ---
         with torch.no_grad():
             prediction_tensor = self.model(input_tensor)
+            
+        prediction_in_ticks = prediction_tensor.item()
         
-        # Extract the single float value from the output tensor
-        prediction = prediction_tensor.item()
-        
-        return prediction
+        return prediction_in_ticks
 
     def create_prediction_response(self, prediction: float) -> NNPredictionResponse:
         """Creates a properly formatted prediction response for the API"""

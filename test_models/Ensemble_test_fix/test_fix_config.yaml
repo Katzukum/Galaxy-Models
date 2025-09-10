@@ -1,0 +1,24 @@
+model_name: test_fix
+Type: Ensemble Model
+artifact_paths:
+  ensemble_model: test_fix_ensemble.pkl
+  model_refs: test_fix_model_refs.yaml
+Config:
+  ensemble_type: averaging
+  selected_models:
+  - name: test_NN_nn_20250909_202659
+    type: Neural Network (Regression)
+    configPath: Models\NN_nn_20250909_202659\nn_20250909_202659_config.yaml
+  - name: test_Transformer_30Sec_NQ_SuperCCI
+    type: Time-Series Transformer
+    configPath: Models\Transformer_30Sec_NQ_SuperCCI\30Sec_NQ_SuperCCI_config.yaml
+  weights: {}
+  advanced_options:
+    validationSplit: 0.2
+    randomState: 42
+  features:
+  - close
+  - open
+  - high
+  - low
+  - volume
