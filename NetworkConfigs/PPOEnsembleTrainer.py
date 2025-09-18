@@ -427,17 +427,38 @@ class PPOEnsembleTrainer:
         # We'll use the raw data and let individual models handle their own preprocessing
         print("Using raw data without delta features preprocessing")
         
-        # Select features - use basic price and volume features
+        # Select features - prioritize basic price and volume features, then add all numeric features
         basic_features = ['open', 'high', 'low', 'close', 'volume']
         available_features = [col for col in basic_features if col in data.columns]
         
-        # Add any additional numeric features
+        # Add ALL additional numeric features (remove the 10 feature limit)
         numeric_features = data.select_dtypes(include=[np.number]).columns.tolist()
+        print(f"Found {len(numeric_features)} numeric columns: {numeric_features}")
+        
+        # Filter out any problematic columns
+        excluded_columns = ['index', 'id', 'timestamp', 'date', 'time', 'datetime']
+        excluded_features = []
         for feature in numeric_features:
-            if feature not in available_features and len(available_features) < 10:  # Limit to avoid too many features
-                available_features.append(feature)
+            if feature not in available_features:
+                if any(excluded in feature.lower() for excluded in excluded_columns):
+                    excluded_features.append(f"{feature} (excluded: contains excluded keyword)")
+                elif data[feature].isna().all():
+                    excluded_features.append(f"{feature} (excluded: all NaN values)")
+                else:
+                    available_features.append(feature)
+        
+        if excluded_features:
+            print(f"Excluded features: {excluded_features}")
+        
+        # Sort features to have basic features first, then others alphabetically
+        basic_features_found = [f for f in basic_features if f in available_features]
+        other_features = sorted([f for f in available_features if f not in basic_features])
+        available_features = basic_features_found + other_features
         
         print(f"Using features: {available_features}")
+        print(f"Total number of features: {len(available_features)}")
+        print(f"Basic features found: {basic_features_found}")
+        print(f"Additional numeric features: {other_features}")
         
         # Update self.features with the actual features used
         self.features = available_features
