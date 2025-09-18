@@ -10,8 +10,8 @@ from torch.distributions import Categorical
 from sklearn.preprocessing import MinMaxScaler, StandardScaler
 from typing import Dict, Any, List, Tuple
 from collections import deque
-import gym
-from gym import spaces
+import gymnasium as gym
+from gymnasium import spaces
 import random
 from Utilities.data_utils import prepare_delta_features
 
