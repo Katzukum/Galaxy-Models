@@ -439,6 +439,9 @@ class PPOEnsembleTrainer:
         
         print(f"Using features: {available_features}")
         
+        # Update self.features with the actual features used
+        self.features = available_features
+        
         # Prepare feature matrix
         X = data[available_features].values
         
@@ -781,10 +784,16 @@ class PPOEnsembleTrainer:
                 'selected_models': self.selected_models,
                 'ppo_params': self.ppo_params,
                 'trading_params': self.trading_params,
-                'features': self.features,
+                'features': self.features,  # Now contains actual features from dataset
                 'sequence_length': self.sequence_length,
                 'input_size': self.ppo_model.input_size if self.ppo_model else None,
-                'hidden_size': self.ppo_model.hidden_size if self.ppo_model else 64
+                'hidden_size': self.ppo_model.hidden_size if self.ppo_model else 64,
+                'num_features': len(self.features) if self.features else 0,
+                'training_data_shape': {
+                    'train_samples': len(self.X_train) if self.X_train is not None else 0,
+                    'test_samples': len(self.X_test) if self.X_test is not None else 0,
+                    'feature_count': len(self.features) if self.features else 0
+                }
             }
         }
         
@@ -793,6 +802,8 @@ class PPOEnsembleTrainer:
             yaml.dump(config_data, f)
         
         print(f"Model saved to: {model_dir}")
+        print(f"Features saved to config: {self.features}")
+        print(f"Number of features: {len(self.features) if self.features else 0}")
         
         return model_dir
 
