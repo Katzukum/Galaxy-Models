@@ -302,6 +302,9 @@ def get_models():
                 if 'Config' in config_dict and 'ensemble_type' in config_dict['Config']:
                     if config_dict['Config']['ensemble_type'] == 'ppo':
                         model_type = 'PPO Ensemble'
+                # Also check for model_type field
+                elif 'model_type' in config_dict and config_dict['model_type'] == 'PPOEnsemble':
+                    model_type = 'PPO Ensemble'
             
             debug_print(f"Extracted - Name: {model_name}, Type: {model_type}")
             

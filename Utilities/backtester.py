@@ -87,6 +87,16 @@ class Backtester:
         
         # Use recursive key finding to get model type
         self.model_type = self.config.find_key('Type')
+        
+        # Check for PPO ensemble model type
+        if self.model_type is None or self.model_type == 'Unknown Type':
+            config_dict = self.config.to_dict()
+            if 'model_type' in config_dict and config_dict['model_type'] == 'PPOEnsemble':
+                self.model_type = 'PPO Ensemble'
+            elif 'Config' in config_dict and 'ensemble_type' in config_dict['Config']:
+                if config_dict['Config']['ensemble_type'] == 'ppo':
+                    self.model_type = 'PPO Ensemble'
+        
         print(f"Model Type: {self.model_type}")
 
         # Use recursive key finding to get artifact paths and config

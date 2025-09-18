@@ -774,6 +774,7 @@ class PPOEnsembleTrainer:
         # Create main configuration file
         config_data = {
             'model_name': self.model_name,
+            'Type': 'PPO Ensemble',
             'model_type': 'PPOEnsemble',
             'Config': {
                 'ensemble_type': self.ensemble_type,
