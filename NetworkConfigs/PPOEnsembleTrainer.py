@@ -783,7 +783,8 @@ class PPOEnsembleTrainer:
                 'trading_params': self.trading_params,
                 'features': self.features,
                 'sequence_length': self.sequence_length,
-                'input_size': self.ppo_model.input_size if self.ppo_model else None
+                'input_size': self.ppo_model.input_size if self.ppo_model else None,
+                'hidden_size': self.ppo_model.hidden_size if self.ppo_model else 64
             }
         }
         

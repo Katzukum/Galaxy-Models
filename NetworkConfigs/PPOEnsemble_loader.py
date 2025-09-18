@@ -163,15 +163,29 @@ class PPOEnsembleModelLoader:
         if not ppo_model_path:
             raise FileNotFoundError(f"Could not find PPO model file in {model_dir}")
         
-        # Initialize PPO network
+        # Load the state dict to determine the correct architecture
+        state_dict = torch.load(ppo_model_path, map_location='cpu')
+        
+        # Determine hidden_size from the saved model
+        # The first linear layer in feature_extractor should tell us the hidden_size
+        if 'feature_extractor.0.weight' in state_dict:
+            hidden_size = state_dict['feature_extractor.0.weight'].shape[0]
+        else:
+            # Fallback to config or default
+            hidden_size = self.config['Config'].get('hidden_size', 64)
+            print(f"Using hidden_size from config: {hidden_size}")
+        
+        print(f"Detected hidden_size from saved model: {hidden_size}")
+        
+        # Initialize PPO network with correct architecture
         self.ppo_model = PPOEnsembleNetwork(
             input_size=self.input_size,
-            hidden_size=128,
+            hidden_size=hidden_size,
             num_actions=3
         )
         
         # Load trained weights
-        self.ppo_model.load_state_dict(torch.load(ppo_model_path, map_location='cpu'))
+        self.ppo_model.load_state_dict(state_dict)
         self.ppo_model.eval()
         
         print("Successfully loaded PPO model")
