@@ -12,6 +12,7 @@ from NetworkConfigs.NN_loader import NNModelLoader, NNPredictionResponse
 from NetworkConfigs.Transformer_loader import TransformerModelLoader, TransformerPredictionResponse
 from NetworkConfigs.XGBoost_loader import XGBoostModelLoader, XGBoostPredictionResponse
 from NetworkConfigs.PPO_loader import PPOModelLoader, PPOPredictionResponse
+from NetworkConfigs.PPOEnsemble_loader import PPOEnsembleModelLoader, PPOEnsemblePredictionResponse
 
 
 
@@ -82,6 +83,13 @@ def get_model_loader(model_dir):
     model_type = config.find_key('Type', 'nn').lower()
     print(f"[DEBUG] Detected model type: {model_type}")
     
+    # Check for PPO ensemble model
+    if model_type == 'nn' or model_type == 'unknown type':
+        config_dict = config.to_dict()
+        if 'Config' in config_dict and 'ensemble_type' in config_dict['Config']:
+            if config_dict['Config']['ensemble_type'] == 'ppo':
+                model_type = 'ppo ensemble'
+    
     # Select the appropriate loader
     if model_type in ['nn', 'neural network', 'neural network (regression)']:
         print(f"[DEBUG] Creating NNModelLoader")
@@ -96,6 +104,9 @@ def get_model_loader(model_dir):
     elif model_type in ['ppo', 'ppo agent']:
         print(f"[DEBUG] Creating PPOModelLoader")
         return PPOModelLoader(model_dir=model_dir)
+    elif model_type in ['ppo ensemble', 'ppo_ensemble']:
+        print(f"[DEBUG] Creating PPOEnsembleModelLoader")
+        return PPOEnsembleModelLoader(model_dir=model_dir)
     else:
         # Default to NN loader
         print(f"[DEBUG] Unknown model type, defaulting to NNModelLoader")

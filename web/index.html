@@ -452,6 +452,7 @@
                                     <option value="averaging">📊 Averaging Ensemble (Mean Prediction)</option>
                                     <option value="weighted">⚖️ Weighted Ensemble (Custom Weights)</option>
                                     <option value="stacking">🏗️ Stacking Ensemble (Meta-Learning)</option>
+                                    <option value="ppo">🤖 PPO Ensemble (Reinforcement Learning)</option>
                                 </select>
                                 <div class="form-help">
                                     <span class="help-text" data-ensemble="voting" style="display: none;">
@@ -465,6 +466,9 @@
                                     </span>
                                     <span class="help-text" data-ensemble="stacking" style="display: none;">
                                         Meta-learning approach using a second-level model to combine predictions
+                                    </span>
+                                    <span class="help-text" data-ensemble="ppo" style="display: none;">
+                                        Reinforcement learning approach that learns optimal trading strategies from individual model predictions
                                     </span>
                                 </div>
                             </div>
@@ -566,6 +570,52 @@
                                         <option value="elastic">Elastic Net</option>
                                         <option value="xgboost">XGBoost</option>
                                     </select>
+                                </div>
+
+                                <!-- PPO Configuration (for PPO ensemble) -->
+                                <div id="ppo-config" class="form-group" style="display: none;">
+                                    <h5>🤖 PPO Configuration</h5>
+                                    
+                                    <div class="form-row">
+                                        <div class="form-col">
+                                            <label for="ppo-learning-rate">Learning Rate</label>
+                                            <input type="range" id="ppo-learning-rate" min="0.0001" max="0.01" step="0.0001" value="0.0003">
+                                            <span class="range-value">0.0003</span>
+                                        </div>
+                                        <div class="form-col">
+                                            <label for="ppo-epochs">Epochs</label>
+                                            <input type="number" id="ppo-epochs" min="10" max="500" value="100">
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="form-row">
+                                        <div class="form-col">
+                                            <label for="ppo-sequence-length">Sequence Length</label>
+                                            <input type="number" id="ppo-sequence-length" min="30" max="120" value="60">
+                                        </div>
+                                        <div class="form-col">
+                                            <label for="ppo-gamma">Gamma (Discount Factor)</label>
+                                            <input type="range" id="ppo-gamma" min="0.9" max="0.99" step="0.01" value="0.99">
+                                            <span class="range-value">0.99</span>
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="form-row">
+                                        <div class="form-col">
+                                            <label for="ppo-initial-balance">Initial Balance</label>
+                                            <input type="number" id="ppo-initial-balance" min="1000" max="100000" value="50000">
+                                        </div>
+                                        <div class="form-col">
+                                            <label for="ppo-position-size">Position Size</label>
+                                            <input type="range" id="ppo-position-size" min="0.01" max="0.5" step="0.01" value="0.1">
+                                            <span class="range-value">0.1</span>
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="form-help">
+                                        <span>Configure PPO training parameters for reinforcement learning-based ensemble</span>
+                                    </div>
+                                </div>
                                     <div class="form-help">
                                         <span>Second-level model for stacking ensemble</span>
                                     </div>

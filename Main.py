@@ -11,6 +11,7 @@ from pathlib import Path
 from datetime import datetime
 from Utilities.yaml_utils import YAMLConfig, load_yaml_config, find_yaml_files, get_common_config_values
 from NetworkConfigs.EnsembleTrainer import run_ensemble_training
+from NetworkConfigs.PPOEnsembleTrainer import run_ppo_ensemble_training
 
 # Initialize EEL
 eel.init('web')
@@ -167,6 +168,103 @@ def get_ensemble_training_history():
         return []
 
 @eel.expose
+def start_ppo_ensemble_training(ensemble_name, selected_models, csv_path, ppo_params=None, trading_params=None, features=None):
+    """Start PPO ensemble training process"""
+    try:
+        debug_print(f"Starting PPO ensemble training: {ensemble_name}")
+        debug_print(f"Selected models: {len(selected_models)}")
+        debug_print(f"CSV path: {csv_path}")
+        
+        # Generate training ID
+        training_id = f"ppo_ensemble_{int(time.time())}"
+        
+        # Start training in background thread
+        training_thread = threading.Thread(
+            target=run_ppo_ensemble_training_thread,
+            args=(training_id, ensemble_name, selected_models, csv_path, ppo_params, trading_params, features)
+        )
+        training_thread.daemon = True
+        training_thread.start()
+        
+        return training_id
+        
+    except Exception as e:
+        debug_print(f"Error starting PPO ensemble training: {e}")
+        raise e
+
+def run_ppo_ensemble_training_thread(training_id, ensemble_name, selected_models, csv_path, ppo_params, trading_params, features):
+    """Run PPO ensemble training in background thread"""
+    try:
+        debug_print(f"Starting PPO ensemble training thread: {training_id}")
+        debug_print(f"CSV path received: {csv_path}")
+        
+        # Initialize training status
+        training_status[training_id] = {
+            'status': 'running',
+            'message': 'Starting PPO ensemble training...',
+            'progress': 0
+        }
+        training_logs[training_id] = []
+        
+        # Validate CSV file exists
+        if not csv_path or not os.path.exists(csv_path):
+            debug_print(f"CSV file not found: {csv_path}")
+            training_status[training_id] = {
+                'status': 'failed',
+                'message': f'CSV file not found: {csv_path}',
+                'progress': 0
+            }
+            return
+        
+        # Update status
+        training_status[training_id] = {
+            'status': 'running',
+            'message': 'Loading models and preparing data...',
+            'progress': 20
+        }
+        
+        # Prepare configuration
+        config = {
+            'model_name': ensemble_name,
+            'ensemble_type': 'ppo',
+            'selected_models': selected_models,
+            'csv_path': csv_path,
+            'ppo_params': ppo_params or {},
+            'trading_params': trading_params or {},
+            'features': features or []
+        }
+        
+        # Call the actual PPO ensemble training function
+        result = run_ppo_ensemble_training(
+            model_name=ensemble_name,
+            config=config,
+            output_path="Models"
+        )
+        
+        if result['success']:
+            debug_print(f"PPO ensemble training completed successfully: {training_id}")
+            training_status[training_id] = {
+                'status': 'completed',
+                'message': 'PPO ensemble training completed successfully!',
+                'progress': 100
+            }
+        else:
+            debug_print(f"PPO ensemble training failed: {training_id}")
+            training_status[training_id] = {
+                'status': 'failed',
+                'message': f'PPO ensemble training failed: {result.get("error", "Unknown error")}',
+                'progress': 0
+            }
+            
+    except Exception as e:
+        debug_print(f"PPO ensemble training thread error: {e}")
+        training_status[training_id] = {
+            'status': 'failed',
+            'message': f'Error: {str(e)}',
+            'progress': 0
+        }
+
+@eel.expose
 def get_models():
     """Scan the Models folder for YAML files and return model information"""
     debug_print("get_models() called from frontend")
@@ -196,6 +294,14 @@ def get_models():
             # Extract model_name and Type using recursive key finding
             model_name = config.find_key('model_name', 'Unknown Model')
             model_type = config.find_key('Type', 'Unknown Type')
+            
+            # Check if it's a PPO ensemble model
+            if model_type == 'Unknown Type':
+                # Try to find model_type in Config section
+                config_dict = config.to_dict()
+                if 'Config' in config_dict and 'ensemble_type' in config_dict['Config']:
+                    if config_dict['Config']['ensemble_type'] == 'ppo':
+                        model_type = 'PPO Ensemble'
             
             debug_print(f"Extracted - Name: {model_name}, Type: {model_type}")
             
