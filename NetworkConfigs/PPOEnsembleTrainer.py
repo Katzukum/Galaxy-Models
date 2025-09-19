@@ -15,6 +15,7 @@ import gymnasium as gym
 from gymnasium import spaces
 import random
 from Utilities.data_utils import prepare_delta_features
+import time
 
 
 class PPOEnsembleEnvironment(gym.Env):
@@ -271,8 +272,18 @@ class PPOEnsembleNetwork(nn.Module):
         features = self.feature_extractor(x_flat)
         features = features.view(batch_size, seq_len, self.hidden_size)
         
+        # Check for NaN values after feature extraction
+        if torch.isnan(features).any():
+            print("Warning: NaN values detected in features after feature extraction")
+            print(f"NaN count: {torch.isnan(features).sum().item()}")
+        
         # LSTM processing
         lstm_out, _ = self.lstm(features)
+        
+        # Check for NaN values after LSTM
+        if torch.isnan(lstm_out).any():
+            print("Warning: NaN values detected in LSTM output")
+            print(f"NaN count: {torch.isnan(lstm_out).sum().item()}")
         
         # Use last timestep for action and value
         last_output = lstm_out[:, -1, :]
@@ -281,12 +292,36 @@ class PPOEnsembleNetwork(nn.Module):
         action_logits = self.actor(last_output)
         value = self.critic(last_output)
         
+        # Check for NaN values in final outputs
+        if torch.isnan(action_logits).any():
+            print("Warning: NaN values detected in action_logits")
+            print(f"NaN count: {torch.isnan(action_logits).sum().item()}")
+        if torch.isnan(value).any():
+            print("Warning: NaN values detected in value")
+            print(f"NaN count: {torch.isnan(value).sum().item()}")
+        
         return action_logits, value
     
     def get_action(self, x):
         """Get action and log probability for given observation"""
         action_logits, value = self.forward(x)
+        
+        # Check for NaN values in action_logits before softmax
+        if torch.isnan(action_logits).any():
+            print("Warning: NaN values in action_logits before softmax")
+            print(f"Action logits: {action_logits}")
+            # Replace NaN values with zeros
+            action_logits = torch.where(torch.isnan(action_logits), torch.zeros_like(action_logits), action_logits)
+        
         action_probs = torch.softmax(action_logits, dim=-1)
+        
+        # Check for NaN values in action_probs
+        if torch.isnan(action_probs).any():
+            print("Warning: NaN values in action_probs after softmax")
+            print(f"Action probs: {action_probs}")
+            # Replace NaN values with uniform distribution
+            action_probs = torch.ones_like(action_probs) / action_probs.shape[-1]
+        
         dist = Categorical(action_probs)
         action = dist.sample()
         log_prob = dist.log_prob(action)
@@ -435,13 +470,16 @@ class PPOEnsembleTrainer:
         numeric_features = data.select_dtypes(include=[np.number]).columns.tolist()
         print(f"Found {len(numeric_features)} numeric columns: {numeric_features}")
         
-        # Filter out any problematic columns
-        excluded_columns = ['index', 'id', 'timestamp', 'date', 'time', 'datetime']
+        # Filter out any problematic columns - be more specific about exclusions
+        # Only exclude actual timestamp/date columns, not technical indicators with 'time' in the name
+        excluded_columns = ['index', 'id', 'timestamp', 'date', 'datetime']
         excluded_features = []
         for feature in numeric_features:
             if feature not in available_features:
-                if any(excluded in feature.lower() for excluded in excluded_columns):
-                    excluded_features.append(f"{feature} (excluded: contains excluded keyword)")
+                # Only exclude if it's exactly 'time' or starts with 'time' and is a basic timestamp
+                if (feature.lower() == 'time' or 
+                    (feature.lower().startswith('time') and 'plot' not in feature.lower() and 'day' not in feature.lower() and 'hour' not in feature.lower() and 'qrt' not in feature.lower())):
+                    excluded_features.append(f"{feature} (excluded: basic timestamp column)")
                 elif data[feature].isna().all():
                     excluded_features.append(f"{feature} (excluded: all NaN values)")
                 else:
@@ -466,38 +504,39 @@ class PPOEnsembleTrainer:
         # Prepare feature matrix
         X = data[available_features].values
         
-        # Create target (for compatibility, though PPO doesn't use it directly)
-        # Use price change as target (same as current ensemble)
-        if 'close' in data.columns:
-            y = data['close'].pct_change().fillna(0).values
-        else:
-            y = np.zeros(len(data))
-        
+        # The target variable 'y' is not used in PPO training, which relies on
+        # environment rewards. This code has been removed to avoid confusion.
+
         # Split data
         split_idx = int(len(X) * 0.8)
         self.X_train = X[:split_idx]
         self.X_test = X[split_idx:]
-        self.y_train = y[:split_idx]
-        self.y_test = y[split_idx:]
+        self.y_train = None # Set to None as it's no longer generated
+        self.y_test = None  # Set to None as it's no longer generated
         
-        # Normalize features
+        # Initialize scaler for combined features (will be fitted later)
         self.scaler = StandardScaler()
-        self.X_train = self.scaler.fit_transform(self.X_train)
-        self.X_test = self.scaler.transform(self.X_test)
         
         print(f"Data prepared: Train={len(self.X_train)}, Test={len(self.X_test)}")
+        print("Note: Individual models will handle their own scaling. PPO scaler will be fitted on combined features.")
         
-        return self.X_train, self.X_test, self.y_train, self.y_test
+        return self.X_train, self.X_test
     
+    # In PPOEnsembleTrainer.py
+
     def collect_model_predictions(self, X_data):
         """
         Generate predictions from all individual models.
-        Returns matrix of shape (n_samples, n_models)
+        Returns matrix of shape (n_samples, n_models * n_prediction_features)
         """
         print("Collecting predictions from individual models...")
         
-        predictions = []
+        # This will be a list of 2D numpy arrays
+        all_model_preds_list = []
         model_names = []
+        
+        # Create a DataFrame from the raw features for model prediction
+        raw_features_df = pd.DataFrame(X_data, columns=self.features)
         
         for model_name, model_info in self.model_loaders.items():
             try:
@@ -506,58 +545,86 @@ class PPOEnsembleTrainer:
                 
                 print(f"Generating predictions from {model_name} ({model_type})")
                 
-                # For now, create simple predictions based on price trends
-                # This is a fallback approach that doesn't rely on complex model loading
+                feature_dicts = raw_features_df.to_dict('records')
                 
-                # Extract close price from the data (assuming it's the first column or we can find it)
-                if X_data.shape[1] > 0:
-                    # Use the first column as a proxy for price
-                    price_data = X_data[:, 0]
-                    
-                    # Create simple trend-based predictions
-                    if len(price_data) > 1:
-                        # Calculate simple moving average trend
-                        window = min(10, len(price_data))
-                        sma = np.convolve(price_data, np.ones(window)/window, mode='valid')
-                        
-                        # Create predictions based on trend
-                        pred = np.zeros(len(price_data))
-                        pred[window-1:] = sma
-                        
-                        # Fill the beginning with the first valid prediction
-                        pred[:window-1] = pred[window-1]
-                    else:
-                        pred = np.zeros(len(price_data))
-                else:
-                    pred = np.zeros(len(X_data))
+                print(f"Processing {len(feature_dicts)} rows sequentially for '{model_name}'...")
                 
-                predictions.append(pred)
+                # This will be a list of lists, where each inner list is a set of features
+                individual_predictions = []
+                
+                # --- START of NEW logic for handling different model output types ---
+                
+                is_classifier = 'classifier' in model_type.lower()
+                
+                if is_classifier:
+                    # For classifiers, get the label mapping to ensure a consistent order of probabilities
+                    # Sort by value (0, 1, 2...) to get a consistent key order ('Strong Buy', 'Buy'...)
+                    sorted_labels = sorted(loader.label_mapping.keys(), key=loader.label_mapping.get)
+                    print(f"Classifier model detected. Prediction order: {sorted_labels}")
+
+                # This loop processes data sequentially, allowing loaders to maintain state.
+                for row_dict in feature_dicts:
+                    try:
+                        if is_classifier:
+                            # For a classifier, get the dictionary of class probabilities
+                            prob_dict = loader.predict_proba(row_dict)
+                            # Convert the dict to a list of floats in a fixed order
+                            prediction = [prob_dict[label] for label in sorted_labels]
+                        else:
+                            # For a regression model, get the single float prediction and wrap it in a list
+                            prediction = [loader.predict(row_dict)]
+                            
+                        individual_predictions.append(prediction)
+
+                    except ValueError:
+                        # This exception is EXPECTED for the first few data points
+                        # of stateful models until their history buffer is full. We simply ignore it.
+                        pass
+                
+                # --- END of NEW logic ---
+                
+                if not individual_predictions:
+                    raise ValueError(f"No successful predictions were generated for {model_name}. "
+                                    f"Dataset size ({len(feature_dicts)}) may be smaller than the model's required history.")
+
+                num_missing = len(feature_dicts) - len(individual_predictions)
+                
+                if num_missing > 0:
+                    padding_value = individual_predictions[0] # This is now a list of floats
+                    padding = [padding_value] * num_missing
+                    individual_predictions = padding + individual_predictions
+
+                # Convert list of lists to a 2D numpy array of floats
+                pred_array = np.array(individual_predictions, dtype=np.float32)
+                
+                if pred_array.ndim == 1:
+                    pred_array = pred_array.reshape(-1, 1)
+
+                if len(pred_array) != len(X_data):
+                    raise ValueError(f"CRITICAL: Final prediction length for {model_name} ({len(pred_array)}) does not match data length ({len(X_data)}).")
+
+                all_model_preds_list.append(pred_array)
                 model_names.append(model_name)
-                print(f"Successfully generated {len(pred)} predictions from {model_name}")
+                print(f"Successfully generated predictions from {model_name} with shape {pred_array.shape}")
                 
             except Exception as e:
-                print(f"Error generating predictions from {model_name}: {e}")
-                # Create dummy predictions to avoid complete failure
-                dummy_pred = np.zeros(len(X_data))
-                predictions.append(dummy_pred)
-                model_names.append(model_name)
-                print(f"Using dummy predictions for {model_name}")
-                continue
+                print(f"Critical error generating predictions from model '{model_name}'.")
+                raise RuntimeError(f"Failed to get predictions from model '{model_name}'. Reason: {e}") from e
         
-        if not predictions:
+        if not all_model_preds_list:
             raise ValueError("No valid predictions generated from any model")
         
-        # Stack predictions into matrix
-        predictions_matrix = np.column_stack(predictions)
+        # Horizontally stack all the prediction arrays (e.g., from NN, Transformer, XGBoost)
+        predictions_matrix = np.hstack(all_model_preds_list)
         
-        print(f"Generated predictions matrix: {predictions_matrix.shape}")
+        print(f"Generated final predictions matrix with shape: {predictions_matrix.shape}")
         print(f"Model names: {model_names}")
         
-        return predictions_matrix, model_names
-    
+        return predictions_matrix, model_names 
     def create_ppo_dataset(self, X_data, model_predictions):
         """
         Create dataset for PPO training by combining model predictions and market data.
+        First combines raw features with model predictions, then scales the combined dataset.
         """
         print("Creating PPO training dataset...")
         
@@ -568,18 +635,30 @@ class PPOEnsembleTrainer:
         
         print(f"Data shapes - X_data: {X_data.shape}, model_predictions: {model_predictions.shape}")
         
-        # Create sequences for time-series PPO training
+        # Combine raw features with model predictions BEFORE creating sequences
+        # This ensures we have the correct feature count for scaling
+        combined_features = np.concatenate([X_data, model_predictions], axis=1)
+        print(f"Combined features shape: {combined_features.shape}")
+        print(f"Expected feature count: {X_data.shape[1]} raw features + {model_predictions.shape[1]} model predictions = {X_data.shape[1] + model_predictions.shape[1]}")
+        
+        # Scale the combined features
+        print("Scaling combined features...")
+        combined_features_scaled = self.scaler.transform(combined_features)
+        print(f"Scaled combined features shape: {combined_features_scaled.shape}")
+        
+        # Create sequences for time-series PPO training using scaled combined features
         sequences = []
         targets = []
         
-        for i in range(self.sequence_length, len(X_data)):
-            # Get sequence of model predictions and market data
-            seq_model_preds = model_predictions[i-self.sequence_length:i]
-            seq_market_data = X_data[i-self.sequence_length:i]
-            
-            # Combine into single sequence
-            sequence = np.concatenate([seq_model_preds, seq_market_data], axis=1)
+        for i in range(self.sequence_length, len(combined_features_scaled)):
+            # Get sequence of scaled combined features
+            sequence = combined_features_scaled[i-self.sequence_length:i]
             sequences.append(sequence)
+            
+            # Debug: print shapes for first iteration
+            if i == self.sequence_length:
+                print(f"First sequence shape: {sequence.shape}")
+                print(f"Feature breakdown: {X_data.shape[1]} raw + {model_predictions.shape[1]} predictions = {sequence.shape[1]} total")
             
             # Target is next period's return (for reward calculation)
             if i < len(X_data) - 1:
@@ -593,6 +672,7 @@ class PPOEnsembleTrainer:
         
         print(f"Created PPO dataset: {sequences.shape}")
         print(f"Sequence shape breakdown - batch: {sequences.shape[0]}, timesteps: {sequences.shape[1]}, features: {sequences.shape[2]}")
+        print(f"Total features per timestep: {sequences.shape[2]} (should be raw features + model predictions)")
         
         return sequences, targets
     
@@ -612,6 +692,16 @@ class PPOEnsembleTrainer:
         self.model_predictions_train, model_names = self.collect_model_predictions(self.X_train)
         self.model_predictions_test, _ = self.collect_model_predictions(self.X_test)
         
+        # Fit scaler on combined features (raw features + model predictions)
+        print("Fitting scaler on combined features...")
+        print(f"Raw features shape: {self.X_train.shape}")
+        print(f"Model predictions shape: {self.model_predictions_train.shape}")
+        combined_features = np.concatenate([self.X_train, self.model_predictions_train], axis=1)
+        print(f"Combined features shape: {combined_features.shape}")
+        print(f"Expected feature count: {self.X_train.shape[1]} raw features + {self.model_predictions_train.shape[1]} model predictions = {self.X_train.shape[1] + self.model_predictions_train.shape[1]}")
+        self.scaler.fit(combined_features)
+        print(f"Scaler fitted on {combined_features.shape[1]} combined features")
+        
         # Create PPO training dataset
         train_sequences, train_targets = self.create_ppo_dataset(self.X_train, self.model_predictions_train)
         
@@ -628,48 +718,58 @@ class PPOEnsembleTrainer:
         
         # Initialize PPO model
         input_size = train_sequences.shape[2]  # Features per timestep
+        expected_input_size = self.X_train.shape[1] + self.model_predictions_train.shape[1]
         print(f"Initializing PPO model with input_size: {input_size}")
+        print(f"Expected features: {self.X_train.shape[1]} raw features + {self.model_predictions_train.shape[1]} model predictions = {expected_input_size}")
+        print(f"Actual train_sequences shape: {train_sequences.shape}")
+        print(f"Scaler was fitted on {combined_features.shape[1]} features")
+        
+        if input_size != expected_input_size:
+            print(f"Warning: Input size mismatch! Expected {expected_input_size}, got {input_size}")
+            print("This might cause issues with the PPO model training.")
+            return None
+        time.sleep(10)
         self.ppo_model = PPOEnsembleNetwork(
             input_size=input_size,
             hidden_size=64,  # Reduced hidden size to avoid memory issues
             num_actions=3
         )
         
-        # Simplified training loop for now
-        optimizer = optim.Adam(self.ppo_model.parameters(), lr=self.learning_rate)
-        
-        print(f"Starting simplified PPO training for {self.epochs} epochs...")
-        
-        # Convert sequences to tensors
-        train_sequences_tensor = torch.FloatTensor(train_sequences)
-        
+        print(f"Starting PPO training for {self.epochs} epochs...")
+
+        # Lists to store training metrics
+        all_rewards = []
+        all_policy_losses = []
+        all_value_losses = []
+
         for epoch in range(self.epochs):
-            # Simple forward pass to test the network
-            try:
-                action_logits, values = self.ppo_model(train_sequences_tensor)
-                print(f"Epoch {epoch}: Network forward pass successful")
-                print(f"  Action logits shape: {action_logits.shape}")
-                print(f"  Values shape: {values.shape}")
-                
-                # Simple loss calculation
-                action_probs = torch.softmax(action_logits, dim=-1)
-                action_dist = Categorical(action_probs)
-                actions = action_dist.sample()
-                
-                # Dummy loss for now
-                loss = torch.mean(values) + torch.mean(action_logits)
-                loss.backward()
-                optimizer.step()
-                optimizer.zero_grad()
-                
-                if epoch % 10 == 0:
-                    print(f"Epoch {epoch}: Loss={loss.item():.4f}")
-                    
-            except Exception as e:
-                print(f"Error in epoch {epoch}: {e}")
-                break
+            # 1. Collect experience by interacting with the environment
+            observations, actions, rewards, log_probs, values = self._collect_rollouts(env, num_rollouts=1) # Using 1 full rollout per epoch for simplicity
+            
+            # 2. Compute returns and advantages
+            returns, advantages = self._compute_returns_and_advantages(rewards, self.gamma)
+            
+            # 3. Update the policy using the collected data
+            policy_loss, value_loss = self._update_policy(observations, actions, log_probs, returns, advantages, values)
+            
+            # 4. Log progress
+            avg_reward = np.mean(rewards)
+            all_rewards.append(avg_reward)
+            all_policy_losses.append(policy_loss)
+            all_value_losses.append(value_loss)
+            
+            if epoch % 10 == 0 or epoch == self.epochs - 1:
+                print(f"Epoch {epoch}/{self.epochs}: Avg Reward={avg_reward:.4f}, Policy Loss={policy_loss:.4f}, Value Loss={value_loss:.4f}")
+
+        # Store final results
+        self.training_results = {
+            'rewards': all_rewards,
+            'policy_losses': all_policy_losses,
+            'value_losses': all_value_losses,
+            'final_avg_reward': np.mean(all_rewards[-10:]) # Avg reward of last 10 epochs
+        }
         
-        print("Simplified PPO ensemble training completed!")
+        print("PPO ensemble training completed!")
         
         # Save model
         self.save_model()
@@ -795,6 +895,11 @@ class PPOEnsembleTrainer:
         with open(model_refs_path, 'w') as f:
             yaml.dump(model_refs, f)
         
+        # Calculate total feature count (raw features + model predictions)
+        total_features = len(self.features) if self.features else 0
+        if hasattr(self, 'model_predictions_train') and self.model_predictions_train is not None:
+            total_features += self.model_predictions_train.shape[1]
+        
         # Create main configuration file
         config_data = {
             'model_name': self.model_name,
@@ -805,15 +910,19 @@ class PPOEnsembleTrainer:
                 'selected_models': self.selected_models,
                 'ppo_params': self.ppo_params,
                 'trading_params': self.trading_params,
-                'features': self.features,  # Now contains actual features from dataset
+                'features': self.features,  # Raw features from dataset
                 'sequence_length': self.sequence_length,
                 'input_size': self.ppo_model.input_size if self.ppo_model else None,
                 'hidden_size': self.ppo_model.hidden_size if self.ppo_model else 64,
-                'num_features': len(self.features) if self.features else 0,
+                'num_raw_features': len(self.features) if self.features else 0,
+                'num_model_predictions': self.model_predictions_train.shape[1] if hasattr(self, 'model_predictions_train') and self.model_predictions_train is not None else 0,
+                'total_features': total_features,
                 'training_data_shape': {
                     'train_samples': len(self.X_train) if self.X_train is not None else 0,
                     'test_samples': len(self.X_test) if self.X_test is not None else 0,
-                    'feature_count': len(self.features) if self.features else 0
+                    'raw_feature_count': len(self.features) if self.features else 0,
+                    'model_prediction_count': self.model_predictions_train.shape[1] if hasattr(self, 'model_predictions_train') and self.model_predictions_train is not None else 0,
+                    'total_feature_count': total_features
                 }
             }
         }
@@ -840,4 +949,5 @@ def run_ppo_ensemble_training(model_name, config, output_path='/models'):
         return {'success': True, 'results': results, 'model_dir': trainer.output_path}
     except Exception as e:
         print(f"Error in PPO ensemble training: {e}")
+        return {'success': False, 'error': str(e)}
         return {'success': False, 'error': str(e)}

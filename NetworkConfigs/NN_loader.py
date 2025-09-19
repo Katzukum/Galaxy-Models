@@ -110,7 +110,7 @@ class NNModelLoader:
         """
         if self.previous_feature_dict is None:
             self.previous_feature_dict = feature_dict
-            raise ValueError("Not enough historical data to calculate deltas. Received first data point.")
+            # raise ValueError("Not enough historical data to calculate deltas. Received first data point.")
             
         delta_feature_dict = feature_dict.copy()
         for col in ['close', 'open', 'high', 'low']:

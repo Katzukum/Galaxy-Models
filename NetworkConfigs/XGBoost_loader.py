@@ -97,26 +97,7 @@ class XGBoostModelLoader:
         Returns:
             str: The predicted trading action (e.g., 'Strong Buy', 'Hold', 'Weak Sell').
         """
-        if self.previous_feature_dict is None:
-            self.previous_feature_dict = feature_dict
-            raise ValueError("Not enough historical data to calculate deltas. Received first data point.")
-
-        # Calculate deltas for price-related features
-        delta_feature_dict = feature_dict.copy()
-        for col in ['close', 'open', 'high', 'low']:
-            if col in delta_feature_dict:
-                delta_feature_dict[col] = feature_dict[col] - self.previous_feature_dict.get(col, feature_dict[col])
-
-        # Update the history
-        self.previous_feature_dict = feature_dict
-
-        # Now, proceed with the original prediction logic using the delta_feature_dict
-        ordered_values = [delta_feature_dict[feature] for feature in self.features]
-        input_array = np.array(ordered_values).reshape(1, -1)
-        scaled_array = self.scaler.transform(input_array)
-        prediction_class = self.model.predict(scaled_array)[0]
-        predicted_action = self.reverse_label_mapping[prediction_class]
-        
+        predicted_action, _ = self._compute_prediction_and_probabilities(feature_dict)
         return predicted_action
 
     def predict_proba(self, feature_dict: Dict[str, float]) -> Dict[str, float]:
@@ -130,32 +111,8 @@ class XGBoostModelLoader:
         Returns:
             Dict[str, float]: A dictionary mapping action names to their probabilities.
         """
-        if self.previous_feature_dict is None:
-            self.previous_feature_dict = feature_dict
-            raise ValueError("Not enough historical data to calculate deltas. Received first data point.")
-
-        # Calculate deltas for price-related features
-        delta_feature_dict = feature_dict.copy()
-        for col in ['close', 'open', 'high', 'low']:
-            if col in delta_feature_dict:
-                delta_feature_dict[col] = feature_dict[col] - self.previous_feature_dict.get(col, feature_dict[col])
-
-        # Update the history
-        self.previous_feature_dict = feature_dict
-
-        # Now, proceed with the original prediction logic using the delta_feature_dict
-        ordered_values = [delta_feature_dict[feature] for feature in self.features]
-        input_array = np.array(ordered_values).reshape(1, -1)
-        scaled_array = self.scaler.transform(input_array)
-        prediction_probabilities = self.model.predict_proba(scaled_array)[0]
-        
-        # Create a dictionary mapping action names to probabilities
-        prob_dict = {}
-        for class_idx, probability in enumerate(prediction_probabilities):
-            action_name = self.reverse_label_mapping[class_idx]
-            prob_dict[action_name] = float(probability)
-        
-        return prob_dict
+        _, probabilities = self._compute_prediction_and_probabilities(feature_dict)
+        return probabilities
 
     def get_model_info(self) -> Dict[str, Any]:
         """
@@ -174,11 +131,55 @@ class XGBoostModelLoader:
             'model_params': self.model_params
         }
 
+    def _compute_prediction_and_probabilities(self, feature_dict: Dict[str, float]) -> tuple[str, Dict[str, float]]:
+        """
+        Internal method that computes both prediction and probabilities using the same preprocessed features.
+        This avoids the bug where calling predict() and predict_proba() separately would cause
+        incorrect delta calculations due to state updates.
+        
+        Args:
+            feature_dict (Dict[str, float]): A dictionary where keys are feature 
+                                           names and values are the feature values.
+        
+        Returns:
+            tuple[str, Dict[str, float]]: A tuple containing (predicted_action, probabilities_dict)
+        """
+        if self.previous_feature_dict is None:
+            self.previous_feature_dict = feature_dict
+            raise ValueError("Not enough historical data to calculate deltas. Received first data point.")
+
+        # Calculate deltas for price-related features
+        delta_feature_dict = feature_dict.copy()
+        for col in ['close', 'open', 'high', 'low']:
+            if col in delta_feature_dict:
+                delta_feature_dict[col] = feature_dict[col] - self.previous_feature_dict.get(col, feature_dict[col])
+
+        # Update the history (only once)
+        self.previous_feature_dict = feature_dict
+
+        # Prepare the input data using the delta_feature_dict
+        ordered_values = [delta_feature_dict[feature] for feature in self.features]
+        input_array = np.array(ordered_values).reshape(1, -1)
+        scaled_array = self.scaler.transform(input_array)
+        
+        # Get both prediction and probabilities using the same preprocessed data
+        prediction_class = self.model.predict(scaled_array)[0]
+        predicted_action = self.reverse_label_mapping[prediction_class]
+        
+        prediction_probabilities = self.model.predict_proba(scaled_array)[0]
+        
+        # Create a dictionary mapping action names to probabilities
+        prob_dict = {}
+        for class_idx, probability in enumerate(prediction_probabilities):
+            action_name = self.reverse_label_mapping[class_idx]
+            prob_dict[action_name] = float(probability)
+        
+        return predicted_action, prob_dict
+
     def create_prediction_response(self, feature_dict: Dict[str, float]) -> XGBoostPredictionResponse:
         """Creates a properly formatted prediction response for the API"""
-        # Get both the prediction and probabilities
-        predicted_action = self.predict(feature_dict)
-        probabilities = self.predict_proba(feature_dict)
+        # Get both the prediction and probabilities using the same preprocessed features
+        predicted_action, probabilities = self._compute_prediction_and_probabilities(feature_dict)
         
         # The confidence is the probability of the predicted action
         confidence = probabilities[predicted_action]

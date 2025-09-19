@@ -128,7 +128,11 @@ def main():
             data_params = training_params['data_params'].copy()
             data_params['features'] = feature_names
         else:
-            data_params = {'sequence_length': 60, 'features': feature_names}
+            data_params = {
+                'sequence_length': 60, 
+                'features': feature_names,
+                'delta_feature_list': ['close', 'open', 'high', 'low']
+            }
         
         if training_params and 'train_params' in training_params:
             train_params = training_params['train_params']

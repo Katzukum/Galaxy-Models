@@ -219,20 +219,38 @@ class PPOEnsembleModelLoader:
         if X.ndim == 1:
             X = X.reshape(1, -1)
         
-        # Normalize input features
-        X_scaled = self.scaler.transform(X)
-        
-        # Get individual model predictions
+        # Get individual model predictions using RAW features (not pre-scaled)
         individual_predictions = {}
         model_predictions = []
         
         for model_name, model_info in self.individual_loaders.items():
             try:
                 loader = model_info['loader']
-                pred = loader.predict(X_scaled)
                 
-                # Ensure prediction is scalar
-                if hasattr(pred, 'item'):
+                # Convert raw features to feature dictionary for individual models
+                feature_dict = {}
+                for i, feature in enumerate(self.features):
+                    if i < X.shape[1]:
+                        feature_dict[feature] = float(X[0, i])  # Use raw features
+                    else:
+                        feature_dict[feature] = 0.0
+                
+                # Individual model handles its own scaling internally
+                pred = loader.predict(feature_dict)
+                
+                # Handle different return types
+                if isinstance(pred, str):
+                    # XGBoost returns string labels - convert to numeric
+                    if hasattr(loader, 'label_mapping'):
+                        pred_value = loader.label_mapping.get(pred, 0)
+                    else:
+                        # Try to map common action strings to numbers
+                        action_map = {
+                            'strong sell': 0, 'weak sell': 1, 'hold': 2, 
+                            'weak buy': 3, 'strong buy': 4
+                        }
+                        pred_value = action_map.get(pred.lower(), 2)  # Default to hold
+                elif hasattr(pred, 'item'):
                     pred_value = pred.item()
                 elif isinstance(pred, (list, np.ndarray)) and len(pred) > 0:
                     pred_value = float(pred[0])
@@ -250,25 +268,27 @@ class PPOEnsembleModelLoader:
         # Convert to numpy array
         model_predictions = np.array(model_predictions).reshape(1, -1)
         
-        # Create sequence for PPO model
-        if len(X_scaled) >= self.sequence_length:
+        # Create sequence for PPO model using RAW features
+        if len(X) >= self.sequence_length:
             # Use last sequence_length samples
-            sequence_data = X_scaled[-self.sequence_length:]
+            sequence_data = X[-self.sequence_length:]
             sequence_predictions = np.tile(model_predictions, (self.sequence_length, 1))
         else:
             # Pad with zeros
-            sequence_data = np.zeros((self.sequence_length, X_scaled.shape[1]))
-            sequence_data[-len(X_scaled):] = X_scaled
-            sequence_predictions = np.zeros((self.sequence_length, len(model_predictions)))
+            sequence_data = np.zeros((self.sequence_length, X.shape[1]))
+            sequence_data[-len(X):] = X
+            sequence_predictions = np.zeros((self.sequence_length, model_predictions.shape[1]))
             sequence_predictions[-1] = model_predictions[0]
         
-        # Combine model predictions and market data
-        sequence = np.concatenate([sequence_predictions, sequence_data], axis=1)
+        # Combine model predictions and raw market data
+        # For the saved model, we need 39 features total:
+        # - 2 individual model predictions
+        # - 37 market features
+        # - 0 portfolio state (not included in saved model)
+        sequence_combined = np.concatenate([sequence_predictions, sequence_data], axis=1)
         
-        # Add portfolio state (dummy values for inference)
-        portfolio_state = np.array([1.0, 0.0, 0.0])  # Normalized balance, position, unrealized_pnl
-        portfolio_state_broadcast = np.tile(portfolio_state, (self.sequence_length, 1))
-        sequence = np.concatenate([sequence, portfolio_state_broadcast], axis=1)
+        # Apply PPO ensemble scaler to the combined features
+        sequence = self.scaler.transform(sequence_combined)
         
         # Convert to tensor
         sequence_tensor = torch.FloatTensor(sequence).unsqueeze(0)
@@ -287,7 +307,7 @@ class PPOEnsembleModelLoader:
             predicted_action=predicted_action,
             action_probabilities=action_probabilities,
             individual_predictions=individual_predictions,
-            market_features=X_scaled[-1].tolist() if len(X_scaled) > 0 else [0.0] * len(self.features),
+            market_features=X[-1].tolist() if len(X) > 0 else [0.0] * len(self.features),
             portfolio_state={
                 'balance': 1.0,  # Normalized
                 'position': 0.0,
@@ -316,15 +336,36 @@ class PPOEnsembleModelLoader:
         if X.ndim == 1:
             X = X.reshape(1, -1)
         
-        X_scaled = self.scaler.transform(X)
         predictions = {}
         
         for model_name, model_info in self.individual_loaders.items():
             try:
                 loader = model_info['loader']
-                pred = loader.predict(X_scaled)
                 
-                if hasattr(pred, 'item'):
+                # Convert raw features to feature dictionary for individual models
+                feature_dict = {}
+                for i, feature in enumerate(self.features):
+                    if i < X.shape[1]:
+                        feature_dict[feature] = float(X[0, i])  # Use raw features
+                    else:
+                        feature_dict[feature] = 0.0
+                
+                # Individual model handles its own scaling internally
+                pred = loader.predict(feature_dict)
+                
+                # Handle different return types
+                if isinstance(pred, str):
+                    # XGBoost returns string labels - convert to numeric
+                    if hasattr(loader, 'label_mapping'):
+                        pred_value = loader.label_mapping.get(pred, 0)
+                    else:
+                        # Try to map common action strings to numbers
+                        action_map = {
+                            'strong sell': 0, 'weak sell': 1, 'hold': 2, 
+                            'weak buy': 3, 'strong buy': 4
+                        }
+                        pred_value = action_map.get(pred.lower(), 2)  # Default to hold
+                elif hasattr(pred, 'item'):
                     pred_value = pred.item()
                 elif isinstance(pred, (list, np.ndarray)) and len(pred) > 0:
                     pred_value = float(pred[0])
@@ -344,16 +385,36 @@ class PPOEnsembleModelLoader:
         if X.ndim == 1:
             X = X.reshape(1, -1)
         
-        X_scaled = self.scaler.transform(X)
-        
-        # Get individual model predictions
+        # Get individual model predictions using raw features
         model_predictions = []
         for model_name, model_info in self.individual_loaders.items():
             try:
                 loader = model_info['loader']
-                pred = loader.predict(X_scaled)
                 
-                if hasattr(pred, 'item'):
+                # Convert raw features to feature dictionary for individual models
+                feature_dict = {}
+                for i, feature in enumerate(self.features):
+                    if i < X.shape[1]:
+                        feature_dict[feature] = float(X[0, i])  # Use raw features
+                    else:
+                        feature_dict[feature] = 0.0
+                
+                # Individual model handles its own scaling internally
+                pred = loader.predict(feature_dict)
+                
+                # Handle different return types
+                if isinstance(pred, str):
+                    # XGBoost returns string labels - convert to numeric
+                    if hasattr(loader, 'label_mapping'):
+                        pred_value = loader.label_mapping.get(pred, 0)
+                    else:
+                        # Try to map common action strings to numbers
+                        action_map = {
+                            'strong sell': 0, 'weak sell': 1, 'hold': 2, 
+                            'weak buy': 3, 'strong buy': 4
+                        }
+                        pred_value = action_map.get(pred.lower(), 2)  # Default to hold
+                elif hasattr(pred, 'item'):
                     pred_value = pred.item()
                 elif isinstance(pred, (list, np.ndarray)) and len(pred) > 0:
                     pred_value = float(pred[0])
@@ -365,23 +426,27 @@ class PPOEnsembleModelLoader:
             except Exception as e:
                 model_predictions.append(0.0)
         
-        # Create sequence for PPO model
+        # Create sequence for PPO model using raw features
         model_predictions = np.array(model_predictions).reshape(1, -1)
         
-        if len(X_scaled) >= self.sequence_length:
-            sequence_data = X_scaled[-self.sequence_length:]
+        if len(X) >= self.sequence_length:
+            sequence_data = X[-self.sequence_length:]
             sequence_predictions = np.tile(model_predictions, (self.sequence_length, 1))
         else:
-            sequence_data = np.zeros((self.sequence_length, X_scaled.shape[1]))
-            sequence_data[-len(X_scaled):] = X_scaled
-            sequence_predictions = np.zeros((self.sequence_length, len(model_predictions)))
+            sequence_data = np.zeros((self.sequence_length, X.shape[1]))
+            sequence_data[-len(X):] = X
+            sequence_predictions = np.zeros((self.sequence_length, model_predictions.shape[1]))
             sequence_predictions[-1] = model_predictions[0]
         
-        # Combine and add portfolio state
-        sequence = np.concatenate([sequence_predictions, sequence_data], axis=1)
-        portfolio_state = np.array([1.0, 0.0, 0.0])
-        portfolio_state_broadcast = np.tile(portfolio_state, (self.sequence_length, 1))
-        sequence = np.concatenate([sequence, portfolio_state_broadcast], axis=1)
+        # Combine model predictions and raw market data
+        # For the saved model, we need 39 features total:
+        # - 2 individual model predictions
+        # - 37 market features
+        # - 0 portfolio state (not included in saved model)
+        sequence_combined = np.concatenate([sequence_predictions, sequence_data], axis=1)
+        
+        # Apply PPO ensemble scaler to the combined features
+        sequence = self.scaler.transform(sequence_combined)
         
         # Get PPO prediction
         sequence_tensor = torch.FloatTensor(sequence).unsqueeze(0)
