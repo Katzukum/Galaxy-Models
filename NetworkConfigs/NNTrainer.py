@@ -40,16 +40,18 @@ class NNTrainer:
     def prepare_regression_data(
         data: pd.DataFrame,
         look_ahead_period: int,
-        tick_size: float,
+        atr_column_name: str = "atr1_value",
+        atr_multiplier: float = 1.0,
         columns_to_exclude: List[str] = None
     ) -> Tuple[np.ndarray, np.ndarray, List[str]]:
         """
-        Prepares data for a regression task to predict future price change in ticks.
+        Prepares data for a regression task to predict future price change normalized by ATR.
 
         Args:
-            data (pd.DataFrame): The input dataframe with at least a 'close' column.
+            data (pd.DataFrame): The input dataframe with at least a 'close' column and ATR column.
             look_ahead_period (int): The number of bars to look into the future for the target.
-            tick_size (float): The value of a single tick (e.g., 0.25 for NQ).
+            atr_column_name (str): The name of the ATR column in the dataframe (default: "atr1_value").
+            atr_multiplier (float): Multiplier for ATR values (default: 1.0).
             columns_to_exclude (List[str], optional): A list of columns to exclude from features. 
                                                      Defaults to ['Date', 'Time', 'target'].
 
@@ -59,7 +61,7 @@ class NNTrainer:
                 - y (target), 
                 - list of feature names.
         """
-        print("Preparing data for regression...")
+        print("Preparing data for ATR-based regression...")
         
         if columns_to_exclude is None:
             columns_to_exclude = ['date', 'time', 'target']
@@ -69,10 +71,20 @@ class NNTrainer:
         
         # Update columns_to_exclude to lowercase as well
         columns_to_exclude = [col.lower() for col in columns_to_exclude]
+        atr_column_name = atr_column_name.lower()
 
-        # --- 1. Create the Target Variable (Price Change in Ticks) ---
+        # Validate ATR column exists
+        if atr_column_name not in data.columns:
+            raise ValueError(f"ATR column '{atr_column_name}' not found in data. Available columns: {list(data.columns)}")
+
+        # --- 1. Create the Target Variable (Price Change Normalized by ATR) ---
         future_close = data['close'].shift(-look_ahead_period)
-        data['target'] = (future_close - data['close']) / tick_size
+        atr_values = data[atr_column_name] * atr_multiplier
+        
+        # Avoid division by zero by replacing zero ATR values with a small value
+        atr_values = atr_values.replace(0, 1e-8)
+        
+        data['target'] = (future_close - data['close']) / atr_values
         
         # Drop rows with NaN values resulting from the shift
         processed_data = data.dropna().copy()
@@ -84,7 +96,8 @@ class NNTrainer:
         feature_names = processed_data.drop(columns=existing_columns_to_exclude).columns.tolist()
         y_sample = processed_data['target'].values
         
-        print(f"Data prepared with {X_sample.shape[0]} samples and {X_sample.shape[1]} features.")
+        print(f"ATR-based data prepared with {X_sample.shape[0]} samples and {X_sample.shape[1]} features.")
+        print(f"Target statistics: mean={y_sample.mean():.4f}, std={y_sample.std():.4f}")
         return X_sample, y_sample, feature_names
 
     @staticmethod
@@ -244,7 +257,8 @@ if __name__ == '__main__':
     X_sample_raw, y_sample_raw, feature_names = NNTrainer.prepare_regression_data(
         data=data,
         look_ahead_period=5,
-        tick_size=0.25,
+        atr_column_name="atr1_value",
+        atr_multiplier=1.0,
         columns_to_exclude=['date', 'time', 'target']  # Updated to lowercase after header lowercasing
     )
 

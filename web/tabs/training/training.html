@@ -216,9 +216,14 @@
                                 <small style="color: #ff6b6b;">Number of future periods to predict (target generation)</small>
                             </div>
                             <div class="param-group" style="border: 2px solid #4ecdc4; background: #2d2d2d;">
-                                <label for="nn-tick-size" style="color: #4ecdc4; font-weight: bold;">📏 Tick Size (TARGET GENERATION)</label>
-                                <input type="number" id="nn-tick-size" value="0.25" min="0.01" max="1.0" step="0.01" style="border: 2px solid #4ecdc4; background: #1a1a1a; color: white;">
-                                <small style="color: #4ecdc4;">Price tick size for target calculation</small>
+                                <label for="nn-atr-column" style="color: #4ecdc4; font-weight: bold;">📊 ATR Column Name (TARGET GENERATION)</label>
+                                <input type="text" id="nn-atr-column" value="atr1_value" style="border: 2px solid #4ecdc4; background: #1a1a1a; color: white;">
+                                <small style="color: #4ecdc4;">Name of the ATR column in your data</small>
+                            </div>
+                            <div class="param-group" style="border: 2px solid #4ecdc4; background: #2d2d2d;">
+                                <label for="nn-atr-multiplier" style="color: #4ecdc4; font-weight: bold;">🔢 ATR Multiplier (TARGET GENERATION)</label>
+                                <input type="number" id="nn-atr-multiplier" value="1.0" min="0.1" max="5.0" step="0.1" style="border: 2px solid #4ecdc4; background: #1a1a1a; color: white;">
+                                <small style="color: #4ecdc4;">Multiplier for ATR values in target calculation</small>
                             </div>
                         </div>
                     </div>
@@ -264,19 +269,19 @@
                                 <small>Comma-separated future periods to analyze</small>
                             </div>
                             <div class="param-group">
-                                <label for="xgb-min-tick">Min Tick Change</label>
-                                <input type="number" id="xgb-min-tick" value="20" min="1" max="100">
-                                <small>Minimum tick change for weak signals</small>
+                                <label for="xgb-min-atr">Min ATR Multiplier</label>
+                                <input type="number" id="xgb-min-atr" value="0.5" min="0.1" max="2.0" step="0.1">
+                                <small>Minimum ATR multiplier for weak signals</small>
                             </div>
                             <div class="param-group">
-                                <label for="xgb-strong-tick">Strong Tick Change</label>
-                                <input type="number" id="xgb-strong-tick" value="40" min="1" max="200">
-                                <small>Minimum tick change for strong signals</small>
+                                <label for="xgb-strong-atr">Strong ATR Multiplier</label>
+                                <input type="number" id="xgb-strong-atr" value="1.0" min="0.5" max="3.0" step="0.1">
+                                <small>ATR multiplier for strong signals (must be > min ATR multiplier)</small>
                             </div>
                             <div class="param-group">
-                                <label for="xgb-tick-size">Tick Size</label>
-                                <input type="number" id="xgb-tick-size" value="0.25" min="0.01" max="1.0" step="0.01">
-                                <small>Price tick size for threshold calculation</small>
+                                <label for="xgb-atr-column">ATR Column Name</label>
+                                <input type="text" id="xgb-atr-column" value="atr1_value">
+                                <small>Name of the ATR column in your data</small>
                             </div>
                             <div class="param-group">
                                 <label for="xgb-class-system">Classification System</label>

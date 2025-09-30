@@ -39,35 +39,45 @@ class XGBoostTrainer:
     def generate_labels(
         data: pd.DataFrame, 
         look_ahead_periods: List[int],
-        min_tick_change: int,
-        strong_tick_change: int, # <-- ADD THIS
-        tick_size: float,
+        min_atr_multiplier: float,
+        strong_atr_multiplier: float,
+        atr_column_name: str = "atr1_value",
         use_3_class: bool = True  # New parameter to control 3-class vs 5-class
     ) -> Tuple[pd.DataFrame, Dict[str, int]]:
         """
-        Generates labels based on the MAGNITUDE of future price changes.
+        Generates labels based on the MAGNITUDE of future price changes normalized by ATR.
         
         Args:
+            data (pd.DataFrame): Input dataframe with 'close', 'high', 'low' columns and ATR column.
+            look_ahead_periods (List[int]): List of periods to look ahead for price analysis.
+            min_atr_multiplier (float): Minimum ATR multiplier for weak signals.
+            strong_atr_multiplier (float): ATR multiplier for strong signals.
+            atr_column_name (str): Name of the ATR column in the dataframe (default: "atr1_value").
             use_3_class: If True, combines weak signals and hold into 'Neutral' (3-class)
                         If False, uses original 5-class system
         
         3-class system:
-        - Strong Sell: Significant downward movement
+        - Strong Sell: Significant downward movement (>= strong_atr_multiplier * ATR)
         - Neutral: Weak movements or holds (combines Weak Sell, Hold, Weak Buy)
-        - Strong Buy: Significant upward movement
+        - Strong Buy: Significant upward movement (>= strong_atr_multiplier * ATR)
         
         5-class system (original):
-        - Strong Signal: Price moves by at least strong_tick_change
-        - Weak Signal: Price moves by at least min_tick_change but less than strong_tick_change
+        - Strong Signal: Price moves by at least strong_atr_multiplier * ATR
+        - Weak Signal: Price moves by at least min_atr_multiplier * ATR but less than strong_atr_multiplier * ATR
         """
         class_type = "3-class" if use_3_class else "5-class"
-        print(f"Generating {class_type} Buy/Hold/Sell labels based on MAGNITUDE...")
+        print(f"Generating {class_type} Buy/Hold/Sell labels based on ATR-normalized MAGNITUDE...")
         
         if 'close' not in data.columns:
             raise ValueError("'close' column not found in the dataframe.")
+        
+        if atr_column_name not in data.columns:
+            raise ValueError(f"ATR column '{atr_column_name}' not found in data. Available columns: {list(data.columns)}")
 
-        weak_price_threshold = min_tick_change * tick_size
-        strong_price_threshold = strong_tick_change * tick_size
+        # Calculate ATR-based thresholds
+        atr_values = data[atr_column_name]
+        weak_price_threshold = min_atr_multiplier * atr_values
+        strong_price_threshold = strong_atr_multiplier * atr_values
 
         # Find the max high and min low across all future periods
         future_highs = [data['high'].shift(-p) for p in look_ahead_periods]
@@ -326,13 +336,13 @@ if __name__ == '__main__':
     data = pd.read_csv('sample.csv')
     data.columns = data.columns.str.lower()
 
-    # --- 2. Generate 3-Class Target Variable ---
+    # --- 2. Generate 3-Class Target Variable using ATR ---
     processed_data, label_mapping = XGBoostTrainer.generate_labels(
         data=data.copy(), # Pass a copy to avoid modifying original dataframe in place
         look_ahead_periods=[3, 5],
-        min_tick_change=20, # Threshold for a "Weak" signal
-        strong_tick_change=40, # Threshold for a "Strong" signal
-        tick_size=0.25,
+        min_atr_multiplier=0.5, # Minimum ATR multiplier for weak signals
+        strong_atr_multiplier=1.0, # ATR multiplier for strong signals
+        atr_column_name="atr1_value",
         use_3_class=True  # Use 3-class system for better balance
     )
     

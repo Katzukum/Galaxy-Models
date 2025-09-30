@@ -174,17 +174,21 @@ def main():
         if training_params and 'data_params' in training_params:
             data_params = training_params['data_params']
             look_ahead_period = data_params.get('look_ahead_period', 5)
-            tick_size = data_params.get('tick_size', 0.25)
+            atr_column_name = data_params.get('atr_column_name', 'atr1_value')
+            atr_multiplier = data_params.get('atr_multiplier', 1.0)
         else:
             look_ahead_period = 5
-            tick_size = 0.25
+            atr_column_name = 'atr1_value'
+            atr_multiplier = 1.0
         
-        print(f"Using Neural Network target generation parameters:")
+        print(f"Using Neural Network ATR-based target generation parameters:")
         print(f"  - Look ahead period: {look_ahead_period}")
-        print(f"  - Tick size: {tick_size}")
+        print(f"  - ATR column name: {atr_column_name}")
+        print(f"  - ATR multiplier: {atr_multiplier}")
         
         X_sample, y_sample, feature_names = NNTrainer.prepare_regression_data(
-            data=data, look_ahead_period=look_ahead_period, tick_size=tick_size,
+            data=data, look_ahead_period=look_ahead_period, 
+            atr_column_name=atr_column_name, atr_multiplier=atr_multiplier,
             columns_to_exclude=['date', 'time', 'target']
         )
         
@@ -235,22 +239,22 @@ def main():
         if training_params and 'label_params' in training_params:
             label_params = training_params['label_params']
             look_ahead_periods = label_params.get('look_ahead_periods', [3, 5])
-            min_tick_change = label_params.get('min_tick_change', 20)
-            strong_tick_change = label_params.get('strong_tick_change', 40)
-            tick_size = label_params.get('tick_size', 0.25)
+            min_atr_multiplier = label_params.get('min_atr_multiplier', 0.5)
+            strong_atr_multiplier = label_params.get('strong_atr_multiplier', 1.0)
+            atr_column_name = label_params.get('atr_column_name', 'atr1_value')
             use_3_class = label_params.get('use_3_class', True)
         else:
             look_ahead_periods = [3, 5]
-            min_tick_change = 20
-            strong_tick_change = 40
-            tick_size = 0.25
+            min_atr_multiplier = 0.5
+            strong_atr_multiplier = 1.0
+            atr_column_name = 'atr1_value'
             use_3_class = True
         
-        print(f"Using XGBoost target generation parameters:")
+        print(f"Using XGBoost ATR-based target generation parameters:")
         print(f"  - Look ahead periods: {look_ahead_periods}")
-        print(f"  - Min tick change: {min_tick_change}")
-        print(f"  - Strong tick change: {strong_tick_change}")
-        print(f"  - Tick size: {tick_size}")
+        print(f"  - Min ATR multiplier: {min_atr_multiplier}")
+        print(f"  - Strong ATR multiplier: {strong_atr_multiplier}")
+        print(f"  - ATR column name: {atr_column_name}")
         print(f"  - Use 3-class: {use_3_class}")
         
         # Validate data before processing
@@ -262,9 +266,9 @@ def main():
         processed_data, label_mapping = XGBoostTrainer.generate_labels(
             data=data.copy(), 
             look_ahead_periods=look_ahead_periods,
-            min_tick_change=min_tick_change, 
-            strong_tick_change=strong_tick_change,
-            tick_size=tick_size,
+            min_atr_multiplier=min_atr_multiplier, 
+            strong_atr_multiplier=strong_atr_multiplier,
+            atr_column_name=atr_column_name,
             use_3_class=use_3_class
         )
         
