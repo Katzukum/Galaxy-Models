@@ -21,6 +21,8 @@
                         <option value="nn">🧠 Neural Network (Price Change Regression)</option>
                         <option value="xgboost">🌳 XGBoost (Action Classification)</option>
                         <option value="ppo">🤖 PPO Agent (Reinforcement Learning)</option>
+                        <option value="ppo_ensemble">🤖 PPO Ensemble (RL with Model Predictions)</option>
+                        <option value="ensemble">🎯 Ensemble (Meta-Learning)</option>
                     </select>
                     <div class="form-help">
                         <span class="help-text" data-model="transformer" style="display: none;">
@@ -34,6 +36,12 @@
                         </span>
                         <span class="help-text" data-model="ppo" style="display: none;">
                             PPO reinforcement learning agent for automated trading decisions
+                        </span>
+                        <span class="help-text" data-model="ppo_ensemble" style="display: none;">
+                            PPO ensemble that learns to combine individual model predictions for optimal trading
+                        </span>
+                        <span class="help-text" data-model="ensemble" style="display: none;">
+                            Meta-learning ensemble that combines multiple trained models using various strategies
                         </span>
                     </div>
                 </div>
@@ -89,6 +97,372 @@
                                     </label>
                                 </div>
                             </div>
+
+                <!-- Model Parameters Sections -->
+                <div class="model-parameters-container">
+                    <!-- Transformer Parameters -->
+                    <div id="transformer-params" class="model-params" style="display: none;">
+                        <h4>🔄 Transformer Parameters</h4>
+                        <div class="params-grid">
+                            <div class="param-group">
+                                <label for="transformer-d-model">d_model (Hidden Dimension)</label>
+                                <input type="number" id="transformer-d-model" value="64" min="16" max="512">
+                                <small>Internal dimension of the model (must be divisible by nhead)</small>
+                            </div>
+                            <div class="param-group">
+                                <label for="transformer-nhead">nhead (Attention Heads)</label>
+                                <input type="number" id="transformer-nhead" value="4" min="1" max="16">
+                                <small>Number of attention heads</small>
+                            </div>
+                            <div class="param-group">
+                                <label for="transformer-layers">Encoder Layers</label>
+                                <input type="number" id="transformer-layers" value="3" min="1" max="12">
+                                <small>Number of transformer encoder layers</small>
+                            </div>
+                            <div class="param-group">
+                                <label for="transformer-feedforward">Feedforward Dimension</label>
+                                <input type="number" id="transformer-feedforward" value="128" min="64" max="1024">
+                                <small>Dimension of the feedforward network</small>
+                            </div>
+                            <div class="param-group">
+                                <label for="transformer-dropout">Dropout Rate</label>
+                                <input type="number" id="transformer-dropout" value="0.1" min="0" max="0.9" step="0.1">
+                                <small>Dropout probability for regularization</small>
+                            </div>
+                            <div class="param-group">
+                                <label for="transformer-sequence-length">Sequence Length</label>
+                                <input type="number" id="transformer-sequence-length" value="60" min="10" max="200">
+                                <small>Number of timesteps to use for prediction</small>
+                            </div>
+                            <div class="param-group">
+                                <label for="transformer-learning-rate">Learning Rate</label>
+                                <input type="number" id="transformer-learning-rate" value="0.0005" min="0.0001" max="0.01" step="0.0001">
+                                <small>Learning rate for optimizer</small>
+                            </div>
+                            <div class="param-group">
+                                <label for="transformer-epochs">Epochs</label>
+                                <input type="number" id="transformer-epochs" value="25" min="1" max="1000">
+                                <small>Number of training epochs</small>
+                            </div>
+                            <div class="param-group">
+                                <label for="transformer-batch-size">Batch Size</label>
+                                <input type="number" id="transformer-batch-size" value="32" min="1" max="512">
+                                <small>Training batch size</small>
+                            </div>
+                            <div class="param-group">
+                                <label for="transformer-delta-features">Delta Features</label>
+                                <input type="text" id="transformer-delta-features" value="close,open,high,low" placeholder="close,open,high,low">
+                                <small>Comma-separated list of features to convert to deltas</small>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Neural Network Parameters - CACHE BUST: 2024-01-15 15:30:00 -->
+                    <div id="nn-params" class="model-params" style="display: none;">
+                        <h4>🧠 Neural Network Parameters</h4>
+                        <div class="params-grid">
+                            <div class="param-group">
+                                <label for="nn-hidden-layers">Hidden Layers</label>
+                                <input type="number" id="nn-hidden-layers" value="2" min="1" max="10">
+                                <small>Number of hidden layers</small>
+                            </div>
+                            <div class="param-group">
+                                <label for="nn-neurons-layer1">Layer 1 Neurons</label>
+                                <input type="number" id="nn-neurons-layer1" value="64" min="8" max="512">
+                                <small>Number of neurons in first hidden layer</small>
+                            </div>
+                            <div class="param-group">
+                                <label for="nn-neurons-layer2">Layer 2 Neurons</label>
+                                <input type="number" id="nn-neurons-layer2" value="32" min="4" max="256">
+                                <small>Number of neurons in second hidden layer</small>
+                            </div>
+                            <div class="param-group">
+                                <label for="nn-dropout">Dropout Rate</label>
+                                <input type="number" id="nn-dropout" value="0.3" min="0" max="0.9" step="0.1">
+                                <small>Dropout probability for regularization</small>
+                            </div>
+                            <div class="param-group">
+                                <label for="nn-optimizer">Optimizer</label>
+                                <select id="nn-optimizer">
+                                    <option value="Adam">Adam</option>
+                                    <option value="SGD">SGD</option>
+                                    <option value="RMSprop">RMSprop</option>
+                                </select>
+                                <small>Optimization algorithm</small>
+                            </div>
+                            <div class="param-group">
+                                <label for="nn-loss">Loss Function</label>
+                                <select id="nn-loss">
+                                    <option value="MSELoss">MSE Loss</option>
+                                    <option value="L1Loss">L1 Loss</option>
+                                    <option value="SmoothL1Loss">Smooth L1 Loss</option>
+                                </select>
+                                <small>Loss function for regression</small>
+                            </div>
+                            <div class="param-group">
+                                <label for="nn-learning-rate">Learning Rate</label>
+                                <input type="number" id="nn-learning-rate" value="0.001" min="0.0001" max="0.01" step="0.0001">
+                                <small>Learning rate for optimizer</small>
+                            </div>
+                            <div class="param-group">
+                                <label for="nn-epochs">Epochs</label>
+                                <input type="number" id="nn-epochs" value="100" min="1" max="1000">
+                                <small>Number of training epochs</small>
+                            </div>
+                            <!-- CACHE BUST: Added Look Ahead Period and Tick Size parameters -->
+                            <div class="param-group" style="border: 2px solid #ff6b6b; background: #2d2d2d;">
+                                <label for="nn-look-ahead" style="color: #ff6b6b; font-weight: bold;">🎯 Look Ahead Period (TARGET GENERATION)</label>
+                                <input type="number" id="nn-look-ahead" value="5" min="1" max="20" style="border: 2px solid #ff6b6b; background: #1a1a1a; color: white;">
+                                <small style="color: #ff6b6b;">Number of future periods to predict (target generation)</small>
+                            </div>
+                            <div class="param-group" style="border: 2px solid #4ecdc4; background: #2d2d2d;">
+                                <label for="nn-tick-size" style="color: #4ecdc4; font-weight: bold;">📏 Tick Size (TARGET GENERATION)</label>
+                                <input type="number" id="nn-tick-size" value="0.25" min="0.01" max="1.0" step="0.01" style="border: 2px solid #4ecdc4; background: #1a1a1a; color: white;">
+                                <small style="color: #4ecdc4;">Price tick size for target calculation</small>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- XGBoost Parameters -->
+                    <div id="xgboost-params" class="model-params" style="display: none;">
+                        <h4>🌳 XGBoost Parameters</h4>
+                        <div class="params-grid">
+                            <div class="param-group">
+                                <label for="xgb-objective">Objective</label>
+                                <select id="xgb-objective">
+                                    <option value="multi:softmax">Multi-class Softmax</option>
+                                    <option value="multi:softprob">Multi-class Softprob</option>
+                                </select>
+                                <small>Classification objective function</small>
+                            </div>
+                            <div class="param-group">
+                                <label for="xgb-eval-metric">Evaluation Metric</label>
+                                <select id="xgb-eval-metric">
+                                    <option value="mlogloss">Multi-class Log Loss</option>
+                                    <option value="merror">Multi-class Error</option>
+                                </select>
+                                <small>Evaluation metric for classification</small>
+                            </div>
+                            <div class="param-group">
+                                <label for="xgb-n-estimators">N Estimators</label>
+                                <input type="number" id="xgb-n-estimators" value="150" min="10" max="1000">
+                                <small>Number of boosting rounds</small>
+                            </div>
+                            <div class="param-group">
+                                <label for="xgb-learning-rate">Learning Rate</label>
+                                <input type="number" id="xgb-learning-rate" value="0.1" min="0.01" max="1.0" step="0.01">
+                                <small>Boosting learning rate</small>
+                            </div>
+                            <div class="param-group">
+                                <label for="xgb-max-depth">Max Depth</label>
+                                <input type="number" id="xgb-max-depth" value="4" min="1" max="20">
+                                <small>Maximum tree depth</small>
+                            </div>
+                            <div class="param-group">
+                                <label for="xgb-look-ahead">Look Ahead Periods</label>
+                                <input type="text" id="xgb-look-ahead" value="3,5" placeholder="3,5">
+                                <small>Comma-separated future periods to analyze</small>
+                            </div>
+                            <div class="param-group">
+                                <label for="xgb-min-tick">Min Tick Change</label>
+                                <input type="number" id="xgb-min-tick" value="20" min="1" max="100">
+                                <small>Minimum tick change for weak signals</small>
+                            </div>
+                            <div class="param-group">
+                                <label for="xgb-strong-tick">Strong Tick Change</label>
+                                <input type="number" id="xgb-strong-tick" value="40" min="1" max="200">
+                                <small>Minimum tick change for strong signals</small>
+                            </div>
+                            <div class="param-group">
+                                <label for="xgb-tick-size">Tick Size</label>
+                                <input type="number" id="xgb-tick-size" value="0.25" min="0.01" max="1.0" step="0.01">
+                                <small>Price tick size for threshold calculation</small>
+                            </div>
+                            <div class="param-group">
+                                <label for="xgb-class-system">Classification System</label>
+                                <select id="xgb-class-system">
+                                    <option value="3">3-Class (Strong Sell, Neutral, Strong Buy)</option>
+                                    <option value="5">5-Class (Strong Sell, Weak Sell, Hold, Weak Buy, Strong Buy)</option>
+                                </select>
+                                <small>Number of classification classes</small>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- PPO Parameters -->
+                    <div id="ppo-params" class="model-params" style="display: none;">
+                        <h4>🤖 PPO Parameters</h4>
+                        <div class="params-grid">
+                            <div class="param-group">
+                                <label for="ppo-hidden-dim">Hidden Dimension</label>
+                                <input type="number" id="ppo-hidden-dim" value="128" min="32" max="512">
+                                <small>Hidden layer dimension</small>
+                            </div>
+                            <div class="param-group">
+                                <label for="ppo-num-actions">Number of Actions</label>
+                                <input type="number" id="ppo-num-actions" value="3" min="2" max="10">
+                                <small>Number of possible actions (Hold, Buy, Sell)</small>
+                            </div>
+                            <div class="param-group">
+                                <label for="ppo-lookback-window">Lookback Window</label>
+                                <input type="number" id="ppo-lookback-window" value="60" min="10" max="200">
+                                <small>Number of historical timesteps to consider</small>
+                            </div>
+                            <div class="param-group">
+                                <label for="ppo-learning-rate">Learning Rate</label>
+                                <input type="number" id="ppo-learning-rate" value="0.0003" min="0.0001" max="0.01" step="0.0001">
+                                <small>Learning rate for optimizer</small>
+                            </div>
+                            <div class="param-group">
+                                <label for="ppo-epochs">Epochs</label>
+                                <input type="number" id="ppo-epochs" value="100" min="1" max="1000">
+                                <small>Number of training epochs</small>
+                            </div>
+                            <div class="param-group">
+                                <label for="ppo-batch-size">Batch Size</label>
+                                <input type="number" id="ppo-batch-size" value="64" min="1" max="512">
+                                <small>Training batch size</small>
+                            </div>
+                            <div class="param-group">
+                                <label for="ppo-ppo-epochs">PPO Epochs</label>
+                                <input type="number" id="ppo-ppo-epochs" value="4" min="1" max="20">
+                                <small>Number of PPO update epochs per batch</small>
+                            </div>
+                            <div class="param-group">
+                                <label for="ppo-clip-ratio">Clip Ratio</label>
+                                <input type="number" id="ppo-clip-ratio" value="0.2" min="0.1" max="0.5" step="0.05">
+                                <small>PPO clipping ratio</small>
+                            </div>
+                            <div class="param-group">
+                                <label for="ppo-value-coef">Value Coefficient</label>
+                                <input type="number" id="ppo-value-coef" value="0.5" min="0.1" max="2.0" step="0.1">
+                                <small>Value function loss coefficient</small>
+                            </div>
+                            <div class="param-group">
+                                <label for="ppo-entropy-coef">Entropy Coefficient</label>
+                                <input type="number" id="ppo-entropy-coef" value="0.01" min="0.001" max="0.1" step="0.001">
+                                <small>Entropy bonus coefficient</small>
+                            </div>
+                            <div class="param-group">
+                                <label for="ppo-initial-balance">Initial Balance</label>
+                                <input type="number" id="ppo-initial-balance" value="50000" min="1000" max="1000000">
+                                <small>Starting portfolio balance</small>
+                            </div>
+                            <div class="param-group">
+                                <label for="ppo-position-size">Position Size</label>
+                                <input type="number" id="ppo-position-size" value="0.1" min="0.01" max="1.0" step="0.01">
+                                <small>Fraction of balance to use per trade</small>
+                            </div>
+                            <div class="param-group">
+                                <label for="ppo-transaction-cost">Transaction Cost</label>
+                                <input type="number" id="ppo-transaction-cost" value="0.001" min="0" max="0.01" step="0.0001">
+                                <small>Transaction cost as fraction of trade value</small>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- PPO Ensemble Parameters -->
+                    <div id="ppo_ensemble-params" class="model-params" style="display: none;">
+                        <h4>🤖 PPO Ensemble Parameters</h4>
+                        <div class="params-grid">
+                            <div class="param-group">
+                                <label for="ppo-ensemble-hidden-size">Hidden Size</label>
+                                <input type="number" id="ppo-ensemble-hidden-size" value="64" min="32" max="256">
+                                <small>Hidden layer size for PPO network</small>
+                            </div>
+                            <div class="param-group">
+                                <label for="ppo-ensemble-sequence-length">Sequence Length</label>
+                                <input type="number" id="ppo-ensemble-sequence-length" value="60" min="10" max="200">
+                                <small>Number of timesteps for LSTM input</small>
+                            </div>
+                            <div class="param-group">
+                                <label for="ppo-ensemble-learning-rate">Learning Rate</label>
+                                <input type="number" id="ppo-ensemble-learning-rate" value="0.0003" min="0.0001" max="0.01" step="0.0001">
+                                <small>Learning rate for PPO optimizer</small>
+                            </div>
+                            <div class="param-group">
+                                <label for="ppo-ensemble-epochs">Epochs</label>
+                                <input type="number" id="ppo-ensemble-epochs" value="1000" min="100" max="5000">
+                                <small>Number of training epochs</small>
+                            </div>
+                            <div class="param-group">
+                                <label for="ppo-ensemble-batch-size">Batch Size</label>
+                                <input type="number" id="ppo-ensemble-batch-size" value="64" min="1" max="512">
+                                <small>Training batch size</small>
+                            </div>
+                            <div class="param-group">
+                                <label for="ppo-ensemble-gamma">Gamma (Discount Factor)</label>
+                                <input type="number" id="ppo-ensemble-gamma" value="0.99" min="0.8" max="0.999" step="0.001">
+                                <small>Discount factor for future rewards</small>
+                            </div>
+                            <div class="param-group">
+                                <label for="ppo-ensemble-clip-ratio">Clip Ratio</label>
+                                <input type="number" id="ppo-ensemble-clip-ratio" value="0.2" min="0.1" max="0.5" step="0.05">
+                                <small>PPO clipping ratio</small>
+                            </div>
+                            <div class="param-group">
+                                <label for="ppo-ensemble-initial-balance">Initial Balance</label>
+                                <input type="number" id="ppo-ensemble-initial-balance" value="50000" min="1000" max="1000000">
+                                <small>Starting portfolio balance</small>
+                            </div>
+                            <div class="param-group">
+                                <label for="ppo-ensemble-position-size">Position Size</label>
+                                <input type="number" id="ppo-ensemble-position-size" value="0.1" min="0.01" max="1.0" step="0.01">
+                                <small>Fraction of balance to use per trade</small>
+                            </div>
+                            <div class="param-group">
+                                <label for="ppo-ensemble-transaction-cost">Transaction Cost</label>
+                                <input type="number" id="ppo-ensemble-transaction-cost" value="0.001" min="0" max="0.01" step="0.0001">
+                                <small>Transaction cost as fraction of trade value</small>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Ensemble Parameters -->
+                    <div id="ensemble-params" class="model-params" style="display: none;">
+                        <h4>🎯 Ensemble Parameters</h4>
+                        <div class="params-grid">
+                            <div class="param-group">
+                                <label for="ensemble-type">Ensemble Type</label>
+                                <select id="ensemble-type">
+                                    <option value="averaging">Averaging</option>
+                                    <option value="weighted">Weighted</option>
+                                    <option value="voting">Voting</option>
+                                    <option value="stacking">Stacking</option>
+                                </select>
+                                <small>Method for combining model predictions</small>
+                            </div>
+                            <div class="param-group">
+                                <label for="ensemble-validation-split">Validation Split</label>
+                                <input type="number" id="ensemble-validation-split" value="0.2" min="0.1" max="0.5" step="0.05">
+                                <small>Fraction of data to use for validation</small>
+                            </div>
+                            <div class="param-group">
+                                <label for="ensemble-random-state">Random State</label>
+                                <input type="number" id="ensemble-random-state" value="42" min="0" max="1000">
+                                <small>Random seed for reproducibility</small>
+                            </div>
+                            <div class="param-group">
+                                <label for="ensemble-meta-learner">Meta Learner (for Stacking)</label>
+                                <select id="ensemble-meta-learner">
+                                    <option value="linear">Linear Regression</option>
+                                    <option value="ridge">Ridge Regression</option>
+                                    <option value="lasso">Lasso Regression</option>
+                                    <option value="elastic">Elastic Net</option>
+                                    <option value="xgboost">XGBoost Regressor</option>
+                                </select>
+                                <small>Meta-learner for stacking ensemble</small>
+                            </div>
+                        </div>
+                        <div class="param-group">
+                            <label>Selected Models</label>
+                            <div id="ensemble-model-selection" class="model-selection">
+                                <div class="no-models">No models available. Train some models first.</div>
+                            </div>
+                            <small>Select models to include in the ensemble</small>
+                        </div>
+                    </div>
+                </div>
 
                 <!-- Submit Button -->
                 <div class="form-actions">

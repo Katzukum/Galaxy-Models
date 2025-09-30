@@ -1,4 +1,11 @@
-// Training Tab JavaScript
+// Training Tab JavaScript - CACHE BUST: 2024-01-15 15:30:00 - Updated with NN parameter validation
+console.log('DEBUG: Training.js loaded - checking for NN parameters...');
+setTimeout(() => {
+    const lookAhead = document.getElementById('nn-look-ahead');
+    const tickSize = document.getElementById('nn-tick-size');
+    console.log('DEBUG: Initial check - Look Ahead:', lookAhead, 'Tick Size:', tickSize);
+}, 1000);
+
 class Training {
     constructor() {
         this.currentTrainingId = null;
@@ -136,6 +143,17 @@ class Training {
         const targetParams = document.getElementById(`${modelType}-params`);
         if (targetParams) {
             targetParams.style.display = 'block';
+            
+            // DEBUG: Check if NN parameters exist
+            if (modelType === 'nn') {
+                const lookAhead = document.getElementById('nn-look-ahead');
+                const tickSize = document.getElementById('nn-tick-size');
+                console.log('DEBUG: NN parameters check:');
+                console.log('Look Ahead element:', lookAhead);
+                console.log('Tick Size element:', tickSize);
+                console.log('NN params container:', targetParams);
+                console.log('NN params HTML:', targetParams.innerHTML);
+            }
         }
         
         // Special handling for xgboost (it uses 'xgboost' in HTML but 'xgb' in IDs)
@@ -144,6 +162,19 @@ class Training {
             if (xgbParams) {
                 xgbParams.style.display = 'block';
             }
+        }
+
+        // Special handling for ppo_ensemble
+        if (modelType === 'ppo_ensemble') {
+            const ppoEnsembleParams = document.getElementById('ppo_ensemble-params');
+            if (ppoEnsembleParams) {
+                ppoEnsembleParams.style.display = 'block';
+            }
+        }
+
+        // Load available models for ensemble if needed
+        if (modelType === 'ensemble') {
+            this.loadAvailableModelsForEnsemble();
         }
     }
 
@@ -256,6 +287,37 @@ class Training {
         });
     }
 
+    async loadAvailableModelsForEnsemble() {
+        try {
+            const models = await eel.get_models()();
+            this.displayAvailableModelsForEnsemble(models);
+        } catch (error) {
+            console.error('Error loading models for ensemble:', error);
+            const container = document.getElementById('ensemble-model-selection');
+            if (container) {
+                container.innerHTML = '<div class="error">Error loading available models</div>';
+            }
+        }
+    }
+
+    displayAvailableModelsForEnsemble(models) {
+        const container = document.getElementById('ensemble-model-selection');
+        if (!container) return;
+
+        if (models.length === 0) {
+            container.innerHTML = '<div class="no-models">No models available. Train some models first.</div>';
+            return;
+        }
+
+        container.innerHTML = models.map(model => `
+            <label class="model-checkbox">
+                <input type="checkbox" value="${model.name}" data-type="${model.type}" data-path="${model.config_path}">
+                <span class="model-name">${model.name}</span>
+                <span class="model-type">(${model.type})</span>
+            </label>
+        `).join('');
+    }
+
     getTrainingParameters(modelType) {
         const params = {};
 
@@ -276,7 +338,8 @@ class Training {
                 dropout: parseFloat(document.getElementById('transformer-dropout').value)
             };
             params.data_params = {
-                sequence_length: parseInt(document.getElementById('transformer-sequence-length').value)
+                sequence_length: parseInt(document.getElementById('transformer-sequence-length').value),
+                delta_feature_list: document.getElementById('transformer-delta-features').value.split(',').map(x => x.trim())
             };
             params.train_params = {
                 learning_rate: parseFloat(document.getElementById('transformer-learning-rate').value),
@@ -323,7 +386,31 @@ class Training {
                 learning_rate: parseFloat(document.getElementById('nn-learning-rate').value),
                 epochs: parseInt(document.getElementById('nn-epochs').value)
             };
+            const lookAheadElement = document.getElementById('nn-look-ahead');
+            const tickSizeElement = document.getElementById('nn-tick-size');
+            
+            if (!lookAheadElement || !tickSizeElement) {
+                throw new Error('Neural Network parameter elements not found. Please refresh the page.');
+            }
+            
+            params.data_params = {
+                look_ahead_period: parseInt(lookAheadElement.value),
+                tick_size: parseFloat(tickSizeElement.value)
+            };
         } else if (modelType === 'xgboost') {
+            // Validate XGBoost elements exist
+            const xgbElements = [
+                'xgb-objective', 'xgb-eval-metric', 'xgb-n-estimators', 
+                'xgb-learning-rate', 'xgb-max-depth', 'xgb-look-ahead',
+                'xgb-min-tick', 'xgb-strong-tick', 'xgb-tick-size', 'xgb-class-system'
+            ];
+            
+            for (const elementId of xgbElements) {
+                if (!document.getElementById(elementId)) {
+                    throw new Error(`XGBoost parameter element '${elementId}' not found. Please refresh the page.`);
+                }
+            }
+            
             params.model_params = {
                 objective: document.getElementById('xgb-objective').value,
                 eval_metric: document.getElementById('xgb-eval-metric').value,
@@ -335,9 +422,25 @@ class Training {
             params.label_params = {
                 look_ahead_periods: document.getElementById('xgb-look-ahead').value.split(',').map(x => parseInt(x.trim())),
                 min_tick_change: parseInt(document.getElementById('xgb-min-tick').value),
-                strong_tick_change: parseInt(document.getElementById('xgb-strong-tick').value)
+                strong_tick_change: parseInt(document.getElementById('xgb-strong-tick').value),
+                tick_size: parseFloat(document.getElementById('xgb-tick-size').value),
+                use_3_class: document.getElementById('xgb-class-system').value === '3'
             };
         } else if (modelType === 'ppo') {
+            // Validate PPO elements exist
+            const ppoElements = [
+                'ppo-hidden-dim', 'ppo-num-actions', 'ppo-lookback-window',
+                'ppo-learning-rate', 'ppo-epochs', 'ppo-batch-size', 'ppo-ppo-epochs',
+                'ppo-clip-ratio', 'ppo-value-coef', 'ppo-entropy-coef',
+                'ppo-initial-balance', 'ppo-position-size', 'ppo-transaction-cost'
+            ];
+            
+            for (const elementId of ppoElements) {
+                if (!document.getElementById(elementId)) {
+                    throw new Error(`PPO parameter element '${elementId}' not found. Please refresh the page.`);
+                }
+            }
+            
             params.model_params = {
                 hidden_dim: parseInt(document.getElementById('ppo-hidden-dim').value),
                 num_actions: parseInt(document.getElementById('ppo-num-actions').value),
@@ -352,9 +455,55 @@ class Training {
                 value_coef: parseFloat(document.getElementById('ppo-value-coef').value),
                 entropy_coef: parseFloat(document.getElementById('ppo-entropy-coef').value)
             };
+            params.trading_params = {
+                initial_balance: parseInt(document.getElementById('ppo-initial-balance').value),
+                position_size: parseFloat(document.getElementById('ppo-position-size').value),
+                transaction_cost: parseFloat(document.getElementById('ppo-transaction-cost').value)
+            };
+        } else if (modelType === 'ppo_ensemble') {
+            params.ensemble_type = 'ppo';
+            params.selected_models = []; // Will be populated by user selection
+            params.ppo_params = {
+                learning_rate: parseFloat(document.getElementById('ppo-ensemble-learning-rate').value),
+                epochs: parseInt(document.getElementById('ppo-ensemble-epochs').value),
+                batch_size: parseInt(document.getElementById('ppo-ensemble-batch-size').value),
+                sequence_length: parseInt(document.getElementById('ppo-ensemble-sequence-length').value),
+                gamma: parseFloat(document.getElementById('ppo-ensemble-gamma').value),
+                clip_ratio: parseFloat(document.getElementById('ppo-ensemble-clip-ratio').value)
+            };
+            params.trading_params = {
+                initial_balance: parseInt(document.getElementById('ppo-ensemble-initial-balance').value),
+                position_size: parseFloat(document.getElementById('ppo-ensemble-position-size').value),
+                transaction_cost: parseFloat(document.getElementById('ppo-ensemble-transaction-cost').value)
+            };
+            params.model_params = {
+                hidden_size: parseInt(document.getElementById('ppo-ensemble-hidden-size').value)
+            };
+        } else if (modelType === 'ensemble') {
+            const selectedModels = this.getSelectedEnsembleModels();
+            if (selectedModels.length === 0) {
+                throw new Error('Please select at least one model for the ensemble');
+            }
+            
+            params.ensemble_type = document.getElementById('ensemble-type').value;
+            params.selected_models = selectedModels;
+            params.advanced_options = {
+                validationSplit: parseFloat(document.getElementById('ensemble-validation-split').value),
+                randomState: parseInt(document.getElementById('ensemble-random-state').value),
+                metaLearner: document.getElementById('ensemble-meta-learner').value
+            };
         }
 
         return params;
+    }
+
+    getSelectedEnsembleModels() {
+        const checkboxes = document.querySelectorAll('#ensemble-model-selection input[type="checkbox"]:checked');
+        return Array.from(checkboxes).map(checkbox => ({
+            name: checkbox.value,
+            type: checkbox.dataset.type,
+            configPath: checkbox.dataset.path
+        }));
     }
 
     resetParametersToDefaults() {
@@ -368,6 +517,7 @@ class Training {
         document.getElementById('transformer-learning-rate').value = 0.0005;
         document.getElementById('transformer-epochs').value = 25;
         document.getElementById('transformer-batch-size').value = 32;
+        document.getElementById('transformer-delta-features').value = 'close,open,high,low';
 
         // Reset Neural Network parameters
         document.getElementById('nn-hidden-layers').value = 2;
@@ -378,6 +528,8 @@ class Training {
         document.getElementById('nn-loss').value = 'MSELoss';
         document.getElementById('nn-learning-rate').value = 0.001;
         document.getElementById('nn-epochs').value = 100;
+        document.getElementById('nn-look-ahead').value = 5;
+        document.getElementById('nn-tick-size').value = 0.25;
 
         // Reset XGBoost parameters
         document.getElementById('xgb-objective').value = 'multi:softmax';
@@ -388,6 +540,8 @@ class Training {
         document.getElementById('xgb-look-ahead').value = '3,5';
         document.getElementById('xgb-min-tick').value = 20;
         document.getElementById('xgb-strong-tick').value = 40;
+        document.getElementById('xgb-tick-size').value = 0.25;
+        document.getElementById('xgb-class-system').value = '3';
 
         // Reset PPO parameters
         document.getElementById('ppo-hidden-dim').value = 128;
@@ -400,6 +554,27 @@ class Training {
         document.getElementById('ppo-clip-ratio').value = 0.2;
         document.getElementById('ppo-value-coef').value = 0.5;
         document.getElementById('ppo-entropy-coef').value = 0.01;
+        document.getElementById('ppo-initial-balance').value = 50000;
+        document.getElementById('ppo-position-size').value = 0.1;
+        document.getElementById('ppo-transaction-cost').value = 0.001;
+
+        // Reset PPO Ensemble parameters
+        document.getElementById('ppo-ensemble-hidden-size').value = 64;
+        document.getElementById('ppo-ensemble-sequence-length').value = 60;
+        document.getElementById('ppo-ensemble-learning-rate').value = 0.0003;
+        document.getElementById('ppo-ensemble-epochs').value = 1000;
+        document.getElementById('ppo-ensemble-batch-size').value = 64;
+        document.getElementById('ppo-ensemble-gamma').value = 0.99;
+        document.getElementById('ppo-ensemble-clip-ratio').value = 0.2;
+        document.getElementById('ppo-ensemble-initial-balance').value = 50000;
+        document.getElementById('ppo-ensemble-position-size').value = 0.1;
+        document.getElementById('ppo-ensemble-transaction-cost').value = 0.001;
+
+        // Reset Ensemble parameters
+        document.getElementById('ensemble-type').value = 'averaging';
+        document.getElementById('ensemble-validation-split').value = 0.2;
+        document.getElementById('ensemble-random-state').value = 42;
+        document.getElementById('ensemble-meta-learner').value = 'linear';
 
         this.showSuccess('Parameters reset to default values');
     }

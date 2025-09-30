@@ -7,5 +7,5 @@ torch
 numpy
 scikit-learn
 pandas
-gym
+gymnasium
 stable-baselines3

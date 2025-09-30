@@ -15,6 +15,8 @@ from NetworkConfigs.TransformerTrainer import run_training_pipeline as run_trans
 from NetworkConfigs.NNTrainer import run_training_pipeline as run_nn_pipeline, NNTrainer
 from NetworkConfigs.XGboostTrainer import run_training_pipeline as run_xgb_pipeline, XGBoostTrainer
 from NetworkConfigs.PPOTrainer import run_training_pipeline as run_ppo_pipeline, PPOTrainer
+from NetworkConfigs.PPOEnsembleTrainer import run_ppo_ensemble_training
+from NetworkConfigs.EnsembleTrainer import run_ensemble_training
 
 
 def main():
@@ -37,12 +39,14 @@ def main():
         "--model",
         type=str,
         required=True,
-        choices=['transformer', 'nn', 'xgboost', 'ppo'],
+        choices=['transformer', 'nn', 'xgboost', 'ppo', 'ppo_ensemble', 'ensemble'],
         help="The type of model to train.\n"
              "  - 'transformer': Time-series forecasting model.\n"
              "  - 'nn': Neural network for price-change regression.\n"
-             "  - 'xgboost': XGBoost for 5-class action classification.\n"
-             "  - 'ppo': PPO reinforcement learning agent for trading."
+             "  - 'xgboost': XGBoost for action classification.\n"
+             "  - 'ppo': PPO reinforcement learning agent for trading.\n"
+             "  - 'ppo_ensemble': PPO ensemble with model predictions.\n"
+             "  - 'ensemble': Meta-learning ensemble combining multiple models."
     )
     
     parser.add_argument(
@@ -128,7 +132,15 @@ def main():
             data_params = training_params['data_params'].copy()
             data_params['features'] = feature_names
         else:
-            data_params = {'sequence_length': 60, 'features': feature_names}
+            data_params = {
+                'sequence_length': 60, 
+                'features': feature_names,
+                'delta_feature_list': ['close', 'open', 'high', 'low']
+            }
+        
+        print(f"Using Transformer target generation parameters:")
+        print(f"  - Delta features: {data_params['delta_feature_list']}")
+        print(f"  - Sequence length: {data_params['sequence_length']}")
         
         if training_params and 'train_params' in training_params:
             train_params = training_params['train_params']
@@ -158,8 +170,21 @@ def main():
             print("Error: 'close' column not found in the CSV file. Required for Neural Network training.")
             return
         
+        # Use custom data parameters if provided, otherwise use defaults
+        if training_params and 'data_params' in training_params:
+            data_params = training_params['data_params']
+            look_ahead_period = data_params.get('look_ahead_period', 5)
+            tick_size = data_params.get('tick_size', 0.25)
+        else:
+            look_ahead_period = 5
+            tick_size = 0.25
+        
+        print(f"Using Neural Network target generation parameters:")
+        print(f"  - Look ahead period: {look_ahead_period}")
+        print(f"  - Tick size: {tick_size}")
+        
         X_sample, y_sample, feature_names = NNTrainer.prepare_regression_data(
-            data=data, look_ahead_period=5, tick_size=0.25,
+            data=data, look_ahead_period=look_ahead_period, tick_size=tick_size,
             columns_to_exclude=['date', 'time', 'target']
         )
         
@@ -212,10 +237,21 @@ def main():
             look_ahead_periods = label_params.get('look_ahead_periods', [3, 5])
             min_tick_change = label_params.get('min_tick_change', 20)
             strong_tick_change = label_params.get('strong_tick_change', 40)
+            tick_size = label_params.get('tick_size', 0.25)
+            use_3_class = label_params.get('use_3_class', True)
         else:
             look_ahead_periods = [3, 5]
             min_tick_change = 20
             strong_tick_change = 40
+            tick_size = 0.25
+            use_3_class = True
+        
+        print(f"Using XGBoost target generation parameters:")
+        print(f"  - Look ahead periods: {look_ahead_periods}")
+        print(f"  - Min tick change: {min_tick_change}")
+        print(f"  - Strong tick change: {strong_tick_change}")
+        print(f"  - Tick size: {tick_size}")
+        print(f"  - Use 3-class: {use_3_class}")
         
         # Validate data before processing
         if 'close' not in data.columns:
@@ -228,8 +264,8 @@ def main():
             look_ahead_periods=look_ahead_periods,
             min_tick_change=min_tick_change, 
             strong_tick_change=strong_tick_change,
-            tick_size=0.25,
-            use_3_class=True  # Use 3-class system: Strong Sell, Neutral, Strong Buy
+            tick_size=tick_size,
+            use_3_class=use_3_class
         )
         
         # Validate processed data
@@ -345,10 +381,26 @@ def main():
                 'entropy_coef': 0.01
             }
         
+        # Use custom trading parameters if provided, otherwise use defaults
+        if training_params and 'trading_params' in training_params:
+            trading_params = training_params['trading_params']
+        else:
+            trading_params = {
+                'initial_balance': 50000,
+                'position_size': 0.1,
+                'transaction_cost': 0.001
+            }
+        
         config = {
             'model_params': model_params,
-            'train_params': train_params
+            'train_params': train_params,
+            'trading_params': trading_params
         }
+        
+        print(f"Using PPO target generation parameters:")
+        print(f"  - Initial balance: {trading_params['initial_balance']}")
+        print(f"  - Position size: {trading_params['position_size']}")
+        print(f"  - Transaction cost: {trading_params['transaction_cost']}")
         
         MODEL_NAME = args.model_name if args.model_name else "nq_ppo_trading_agent_cli"
         OUTPUT_DIR = f"./Models/PPO_{MODEL_NAME}"
@@ -357,6 +409,143 @@ def main():
             model_name=MODEL_NAME, output_dir=OUTPUT_DIR,
             training_config=config, data=model_data, features=feature_cols
         )
+
+    elif args.model == 'ppo_ensemble':
+        # --- E. Configure and run the PPO Ensemble pipeline ---
+        print("\nConfiguring PPO Ensemble training pipeline...")
+        
+        # Validate data before processing
+        if 'close' not in data.columns.str.lower():
+            print("Error: 'close' column not found in the CSV file. Required for PPO Ensemble training.")
+            return
+        
+        # Prepare features for PPO Ensemble (exclude non-numeric columns)
+        numeric_cols = data.select_dtypes(include=[np.number]).columns.tolist()
+        feature_cols = [col for col in numeric_cols if col not in ['date', 'time', 'target']]
+        
+        if not feature_cols:
+            print("Error: No numeric features found for PPO Ensemble training.")
+            return
+        
+        # Prepare data
+        model_data = data[feature_cols].values
+        
+        # Check for any NaN or infinite values
+        if np.any(np.isnan(model_data)) or np.any(np.isinf(model_data)):
+            print("Warning: Found NaN or infinite values in data. Cleaning...")
+            model_data = np.nan_to_num(model_data, nan=0.0, posinf=0.0, neginf=0.0)
+        
+        print(f"Data shape: {model_data.shape}, Features: {len(feature_cols)}")
+        
+        # Use custom parameters if provided, otherwise use defaults
+        if training_params and 'ppo_params' in training_params:
+            ppo_params = training_params['ppo_params']
+        else:
+            ppo_params = {
+                'learning_rate': 0.0003,
+                'epochs': 1000,
+                'batch_size': 64,
+                'sequence_length': 60,
+                'gamma': 0.99,
+                'clip_ratio': 0.2
+            }
+        
+        if training_params and 'trading_params' in training_params:
+            trading_params = training_params['trading_params']
+        else:
+            trading_params = {
+                'initial_balance': 50000,
+                'position_size': 0.1,
+                'transaction_cost': 0.001
+            }
+        
+        if training_params and 'model_params' in training_params:
+            model_params = training_params['model_params']
+        else:
+            model_params = {
+                'hidden_size': 64
+            }
+        
+        if training_params and 'selected_models' in training_params:
+            selected_models = training_params['selected_models']
+        else:
+            print("Warning: No selected models provided for PPO Ensemble. Using empty list.")
+            selected_models = []
+        
+        config = {
+            'model_name': args.model_name if args.model_name else "ppo_ensemble_cli",
+            'ensemble_type': 'ppo',
+            'selected_models': selected_models,
+            'csv_path': args.csv_path,
+            'ppo_params': ppo_params,
+            'trading_params': trading_params,
+            'model_params': model_params,
+            'features': feature_cols
+        }
+        
+        MODEL_NAME = args.model_name if args.model_name else "ppo_ensemble_cli"
+        OUTPUT_DIR = f"./Models/PPOEnsemble_{MODEL_NAME}"
+        
+        result = run_ppo_ensemble_training(
+            model_name=MODEL_NAME,
+            config=config,
+            output_path="Models"
+        )
+        
+        if result['success']:
+            print("PPO Ensemble training completed successfully!")
+        else:
+            print(f"PPO Ensemble training failed: {result.get('error', 'Unknown error')}")
+
+    elif args.model == 'ensemble':
+        # --- F. Configure and run the Ensemble pipeline ---
+        print("\nConfiguring Ensemble training pipeline...")
+        
+        # Validate data before processing
+        if 'close' not in data.columns.str.lower():
+            print("Error: 'close' column not found in the CSV file. Required for Ensemble training.")
+            return
+        
+        # Use custom parameters if provided, otherwise use defaults
+        if training_params and 'ensemble_type' in training_params:
+            ensemble_type = training_params['ensemble_type']
+        else:
+            ensemble_type = 'averaging'
+        
+        if training_params and 'selected_models' in training_params:
+            selected_models = training_params['selected_models']
+        else:
+            print("Error: No selected models provided for Ensemble training.")
+            return
+        
+        if training_params and 'advanced_options' in training_params:
+            advanced_options = training_params['advanced_options']
+        else:
+            advanced_options = {
+                'validationSplit': 0.2,
+                'randomState': 42,
+                'metaLearner': 'linear'
+            }
+        
+        weights = training_params.get('weights', {}) if training_params else {}
+        
+        MODEL_NAME = args.model_name if args.model_name else "ensemble_cli"
+        OUTPUT_DIR = f"./Models/Ensemble_{MODEL_NAME}"
+        
+        result = run_ensemble_training(
+            ensemble_name=MODEL_NAME,
+            ensemble_type=ensemble_type,
+            selected_models=selected_models,
+            csv_path=args.csv_path,
+            weights=weights,
+            advanced_options=advanced_options,
+            output_dir="Models"
+        )
+        
+        if result:
+            print("Ensemble training completed successfully!")
+        else:
+            print("Ensemble training failed.")
 
 if __name__ == '__main__':
     main()

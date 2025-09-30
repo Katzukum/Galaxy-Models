@@ -437,6 +437,7 @@ function handleEnsembleTypeChange(event) {
     // Show/hide weight configuration
     const weightConfig = document.getElementById('weight-config');
     const metaLearnerConfig = document.getElementById('meta-learner-config');
+    const ppoConfig = document.getElementById('ppo-config');
     
     if (weightConfig) {
         weightConfig.style.display = ensembleType === 'weighted' ? 'block' : 'none';
@@ -446,14 +447,55 @@ function handleEnsembleTypeChange(event) {
         metaLearnerConfig.style.display = ensembleType === 'stacking' ? 'block' : 'none';
     }
     
+    if (ppoConfig) {
+        ppoConfig.style.display = ensembleType === 'ppo' ? 'block' : 'none';
+    }
+    
     // Update help text
     updateEnsembleHelpText(ensembleType);
     
     // Update weight configuration
     updateWeightConfiguration();
     
+    // Setup PPO range value displays
+    if (ensembleType === 'ppo') {
+        setupPPORangeValueDisplays();
+    }
+    
     // Validate form
     validateEnsembleForm();
+}
+
+/**
+ * Setup PPO range value displays
+ */
+function setupPPORangeValueDisplays() {
+    // Learning rate range
+    const learningRateRange = document.getElementById('ppo-learning-rate');
+    const learningRateValue = learningRateRange.nextElementSibling;
+    if (learningRateRange && learningRateValue) {
+        learningRateRange.addEventListener('input', function() {
+            learningRateValue.textContent = this.value;
+        });
+    }
+    
+    // Gamma range
+    const gammaRange = document.getElementById('ppo-gamma');
+    const gammaValue = gammaRange.nextElementSibling;
+    if (gammaRange && gammaValue) {
+        gammaRange.addEventListener('input', function() {
+            gammaValue.textContent = this.value;
+        });
+    }
+    
+    // Position size range
+    const positionSizeRange = document.getElementById('ppo-position-size');
+    const positionSizeValue = positionSizeRange.nextElementSibling;
+    if (positionSizeRange && positionSizeValue) {
+        positionSizeRange.addEventListener('input', function() {
+            positionSizeValue.textContent = this.value;
+        });
+    }
 }
 
 /**
@@ -729,6 +771,33 @@ function getEnsembleFormData() {
         randomState: parseInt(document.getElementById('ensemble-random-state').value)
     };
     
+    // Get PPO parameters
+    let ppoParams = null;
+    let tradingParams = null;
+    let features = null;
+    
+    if (ensembleType === 'ppo') {
+        ppoParams = {
+            learning_rate: parseFloat(document.getElementById('ppo-learning-rate').value),
+            epochs: parseInt(document.getElementById('ppo-epochs').value),
+            sequence_length: parseInt(document.getElementById('ppo-sequence-length').value),
+            gamma: parseFloat(document.getElementById('ppo-gamma').value),
+            batch_size: 64,
+            clip_ratio: 0.2
+        };
+        
+        tradingParams = {
+            initial_balance: parseInt(document.getElementById('ppo-initial-balance').value),
+            position_size: parseFloat(document.getElementById('ppo-position-size').value),
+            transaction_cost: 0.001
+        };
+        
+        // Get features from the first selected model (assuming they're all compatible)
+        if (selectedModels.length > 0) {
+            features = ['close', 'volume', 'rsi', 'macd']; // Default features, could be made configurable
+        }
+    }
+    
     return {
         ensembleType,
         ensembleName,
@@ -740,7 +809,10 @@ function getEnsembleFormData() {
         weights,
         csvFile,
         csvPath,
-        advancedOptions
+        advancedOptions,
+        ppoParams,
+        tradingParams,
+        features
     };
 }
 
@@ -806,14 +878,28 @@ async function startEnsembleTraining(formData) {
         updateEnsembleTrainingStatus('Starting ensemble training...', 20);
         
         // Start training process
-        const trainingId = await eel.start_ensemble_training(
-            formData.ensembleType,
-            formData.ensembleName,
-            formData.selectedModels,
-            csvFilePath,
-            formData.weights,
-            formData.advancedOptions
-        )();
+        let trainingId;
+        if (formData.ensembleType === 'ppo') {
+            // PPO ensemble training
+            trainingId = await eel.start_ppo_ensemble_training(
+                formData.ensembleName,
+                formData.selectedModels,
+                csvFilePath,
+                formData.ppoParams,
+                formData.tradingParams,
+                formData.features
+            )();
+        } else {
+            // Regular ensemble training
+            trainingId = await eel.start_ensemble_training(
+                formData.ensembleType,
+                formData.ensembleName,
+                formData.selectedModels,
+                csvFilePath,
+                formData.weights,
+                formData.advancedOptions
+            )();
+        }
         
         console.log('Ensemble training started with ID:', trainingId);
         

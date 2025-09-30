@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 import torch
 import torch.nn as nn
+import math
 import xgboost as xgb
 from sklearn.preprocessing import MinMaxScaler, StandardScaler
 from Utilities.yaml_utils import YAMLConfig, load_yaml_config
@@ -15,13 +16,33 @@ from Utilities.yaml_utils import YAMLConfig, load_yaml_config
 # Import PPO network for backtesting
 from NetworkConfigs.PPOTrainer import PPONetwork
 
+class PositionalEncoding(nn.Module):
+    def __init__(self, d_model: int, dropout: float = 0.1, max_len: int = 5000):
+        super().__init__()
+        self.dropout = nn.Dropout(p=dropout)
+
+        position = torch.arange(max_len).unsqueeze(1)
+        div_term = torch.exp(torch.arange(0, d_model, 2) * (-math.log(10000.0) / d_model))
+        pe = torch.zeros(max_len, 1, d_model)
+        pe[:, 0, 0::2] = torch.sin(position * div_term)
+        pe[:, 0, 1::2] = torch.cos(position * div_term)
+        self.register_buffer('pe', pe.permute(1, 0, 2)) # Shape: [1, max_len, d_model]
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Args:
+            x: Tensor, shape [batch_size, seq_len, d_model]
+        """
+        x = x + self.pe[:, :x.size(1), :]
+        return self.dropout(x)
+
 class TimeSeriesTransformer(nn.Module):
     def __init__(self, input_dim: int, d_model: int, nhead: int,
                  num_encoder_layers: int, dim_feedforward: int, dropout: float = 0.1):
         super(TimeSeriesTransformer, self).__init__()
         self.d_model = d_model
         self.input_embedding = nn.Linear(input_dim, d_model)
-        self.pos_encoder = nn.Parameter(torch.zeros(1, 5000, d_model))
+        self.pos_encoder = PositionalEncoding(d_model, dropout)
         encoder_layer = nn.TransformerEncoderLayer(
             d_model=d_model, nhead=nhead, dim_feedforward=dim_feedforward,
             dropout=dropout, batch_first=True
@@ -30,8 +51,8 @@ class TimeSeriesTransformer(nn.Module):
         self.output_layer = nn.Linear(d_model, 1)
 
     def forward(self, src: torch.Tensor) -> torch.Tensor:
-        src = self.input_embedding(src) * np.sqrt(self.d_model)
-        src = src + self.pos_encoder[:, :src.size(1), :]
+        src = self.input_embedding(src) * math.sqrt(self.d_model)
+        src = self.pos_encoder(src)
         output = self.transformer_encoder(src)
         output = self.output_layer(output[:, -1, :])
         return output
@@ -65,6 +86,8 @@ class Backtester:
         
         self.model = None
         self.scaler = None
+        self.feature_scaler = None
+        self.target_scaler = None
         self.config = None
         self.model_type = None
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -87,6 +110,16 @@ class Backtester:
         
         # Use recursive key finding to get model type
         self.model_type = self.config.find_key('Type')
+        
+        # Check for PPO ensemble model type
+        if self.model_type is None or self.model_type == 'Unknown Type':
+            config_dict = self.config.to_dict()
+            if 'model_type' in config_dict and config_dict['model_type'] == 'PPOEnsemble':
+                self.model_type = 'PPO Ensemble'
+            elif 'Config' in config_dict and 'ensemble_type' in config_dict['Config']:
+                if config_dict['Config']['ensemble_type'] == 'ppo':
+                    self.model_type = 'PPO Ensemble'
+        
         print(f"Model Type: {self.model_type}")
 
         # Use recursive key finding to get artifact paths and config
@@ -96,12 +129,27 @@ class Backtester:
         # Handle ensemble models differently
         if self.model_type == 'Ensemble Model':
             self._load_ensemble_artifacts(artifact_paths, original_config)
+        elif self.model_type == 'PPO Ensemble':
+            self._load_ppo_ensemble_artifacts(artifact_paths, original_config)
         else:
-            # Load scaler for individual models
-            scaler_path = os.path.join(self.model_dir, artifact_paths['scaler'])
-            with open(scaler_path, 'rb') as f:
-                self.scaler = pickle.load(f)
-            print("Scaler loaded.")
+            # Load scaler(s) for individual models
+            if 'feature_scaler' in artifact_paths and 'target_scaler' in artifact_paths:
+                # New two-scaler system (for refactored transformer models)
+                feature_scaler_path = os.path.join(self.model_dir, artifact_paths['feature_scaler'])
+                target_scaler_path = os.path.join(self.model_dir, artifact_paths['target_scaler'])
+                with open(feature_scaler_path, 'rb') as f:
+                    self.feature_scaler = pickle.load(f)
+                with open(target_scaler_path, 'rb') as f:
+                    self.target_scaler = pickle.load(f)
+                # For backward compatibility, set self.scaler to feature_scaler
+                self.scaler = self.feature_scaler
+                print("Feature and target scalers loaded.")
+            else:
+                # Legacy single scaler system
+                scaler_path = os.path.join(self.model_dir, artifact_paths['scaler'])
+                with open(scaler_path, 'rb') as f:
+                    self.scaler = pickle.load(f)
+                print("Scaler loaded.")
 
             # Load model based on type
             model_key = 'model' if 'model' in artifact_paths else 'model_state_dict'
@@ -162,6 +210,41 @@ class Backtester:
         # Initialize ensemble prediction method
         self._ensemble_prediction_count = 0
 
+    def _load_ppo_ensemble_artifacts(self, artifact_paths, original_config):
+        """Load artifacts for PPO ensemble models."""
+        from NetworkConfigs.PPOEnsemble_loader import PPOEnsembleModelLoader
+        
+        # Load the PPO ensemble model using the PPOEnsembleModelLoader
+        self.ppo_ensemble_loader = PPOEnsembleModelLoader(self.model_dir)
+        
+        # For PPO ensemble models, we'll use the scaler from the PPO ensemble
+        # which should be saved alongside the model
+        scaler_path = os.path.join(self.model_dir, f"{self.config.find_key('model_name')}_scaler.pkl")
+        
+        if os.path.exists(scaler_path):
+            with open(scaler_path, 'rb') as f:
+                self.scaler = pickle.load(f)
+            print("PPO Ensemble scaler loaded.")
+        else:
+            # Fallback to first component model's scaler
+            first_model = self.ppo_ensemble_loader.selected_models[0]
+            first_model_dir = os.path.dirname(first_model['configPath'])
+            
+            first_model_config = load_yaml_config(first_model['configPath'])
+            first_model_artifact_paths = first_model_config.find_key('artifact_paths')
+            scaler_path = os.path.join(first_model_dir, first_model_artifact_paths['scaler'])
+            
+            with open(scaler_path, 'rb') as f:
+                self.scaler = pickle.load(f)
+            print("PPO Ensemble scaler (from first model) loaded.")
+        
+        # Set model to None since we'll use ppo_ensemble_loader for predictions
+        self.model = None
+        print("PPO Ensemble model loaded successfully.")
+        
+        # Initialize PPO ensemble prediction method
+        self._ppo_ensemble_prediction_count = 0
+
     def run(self, initial_capital=50000, take_profit_pips=50, stop_loss_pips=25, tick_size=0.25, tick_value=5):
         """Executes the backtest."""
         print("\n--- Starting Backtest ---")
@@ -209,9 +292,12 @@ class Backtester:
         elif self.model_type == 'Ensemble Model':
             # For ensemble models, use the maximum sequence length of component models
             seq_length = 60  # Transformer needs 60, others need 1
+        elif self.model_type == 'PPO Ensemble':
+            # For PPO ensemble models, use the sequence length from config
+            seq_length = self.config['Config'].get('sequence_length', 60)
 
         # For ensemble models, skip the first 60 rows to allow history buffer to build up
-        start_index = 60 if self.model_type == 'Ensemble Model' else 0
+        start_index = 60 if self.model_type in ['Ensemble Model', 'PPO Ensemble'] else 0
 
         for i in range(max(seq_length, start_index), len(features_df)):
             current_price = df.loc[i, 'close']
@@ -253,9 +339,14 @@ class Backtester:
                 # For ensemble models, we need to prepare data for each component model
                 input_data = features_df.iloc[[i]].values  # Use single row for ensemble
                 scaled_input = self.scaler.transform(input_data)
+            elif self.model_type == 'PPO Ensemble':
+                input_data = features_df.iloc[[i]].values
+                # PPO ensemble handles its own scaling internally
+                scaled_input = input_data
             elif self.model_type == 'Time-Series Transformer':
                 input_data = features_df.iloc[i-seq_length:i].values
-                scaled_input = self.scaler.transform(input_data)
+                # Use feature_scaler for input transformation
+                scaled_input = self.feature_scaler.transform(input_data) if self.feature_scaler else self.scaler.transform(input_data)
             elif self.model_type == 'PPO Agent':
                 # PPO needs sequence data
                 input_data = features_df.iloc[i-seq_length:i].values
@@ -289,6 +380,18 @@ class Backtester:
                      
                 with torch.no_grad():
                     prediction = self.model(input_tensor)
+                    
+                # For transformer models, we need to inverse transform the prediction
+                if self.model_type == 'Time-Series Transformer':
+                    if self.target_scaler:
+                        # Use target_scaler for inverse transformation
+                        prediction = self.target_scaler.inverse_transform(prediction.cpu().numpy())
+                    else:
+                        # Fallback to legacy scaler with dummy array
+                        pred_price_scaled = prediction.cpu().numpy().flatten()[0]
+                        dummy_array = np.zeros((1, len(model_features)))
+                        dummy_array[0, 0] = pred_price_scaled
+                        prediction = self.scaler.inverse_transform(dummy_array)[0, 0]
 
             # Check for opposite signals if still in position
             if position != 0:
@@ -301,14 +404,15 @@ class Backtester:
                     elif position == -1 and predicted_delta > (2 * tick_size):  # Short position, buy signal
                         opposite_signal = True
                 elif self.model_type == 'Time-Series Transformer':
-                    pred_price_scaled = prediction.cpu().numpy().flatten()[0]
-                    dummy_array = np.zeros((1, len(model_features)))
-                    dummy_array[0, 0] = pred_price_scaled
-                    predicted_price = self.scaler.inverse_transform(dummy_array)[0, 0]
+                    # Prediction is already inverse transformed delta
+                    if isinstance(prediction, np.ndarray):
+                        predicted_delta = prediction.flatten()[0]
+                    else:
+                        predicted_delta = prediction
 
-                    if position == 1 and predicted_price < current_price - (2 * tick_size):  # Long position, sell signal
+                    if position == 1 and predicted_delta < -(2 * tick_size):  # Long position, sell signal
                         opposite_signal = True
-                    elif position == -1 and predicted_price > current_price + (2 * tick_size):  # Short position, buy signal
+                    elif position == -1 and predicted_delta > (2 * tick_size):  # Short position, buy signal
                         opposite_signal = True
 
                 elif self.model_type == 'XGBoostClassifier':
@@ -366,15 +470,19 @@ class Backtester:
                         entry_price = current_price
                         print(f"Debug - SELL signal triggered at row {i}")
                 elif self.model_type == 'Time-Series Transformer':
-                    pred_price_scaled = prediction.cpu().numpy().flatten()[0]
-                    dummy_array = np.zeros((1, len(model_features)))
-                    dummy_array[0, 0] = pred_price_scaled
-                    predicted_price = self.scaler.inverse_transform(dummy_array)[0, 0]
-
-                    if predicted_price > current_price + (20 * tick_size):
+                    # Prediction is already inverse transformed delta
+                    if isinstance(prediction, np.ndarray):
+                        predicted_delta = prediction.flatten()[0]
+                    else:
+                        predicted_delta = prediction
+                    
+                    predicted_price = current_price + predicted_delta
+                    threshold = 1 * tick_size  # Sensitive threshold for delta predictions
+                    
+                    if predicted_delta > threshold:
                         position = 1
                         entry_price = current_price
-                    elif predicted_price < current_price - (20 * tick_size):
+                    elif predicted_delta < -threshold:
                         position = -1
                         entry_price = current_price
 
@@ -405,6 +513,9 @@ class Backtester:
         """Executes the backtest and returns results instead of printing them."""
         print("\n--- Starting Unified Backtest ---")
         print(f"Loading CSV from: {self.data_path}")
+
+        # Load artifacts first
+        self.load_artifacts()
 
         # 1. Load and prepare data
         try:
@@ -450,9 +561,12 @@ class Backtester:
         elif self.model_type == 'Ensemble Model':
             # For ensemble models, use the maximum sequence length of component models
             seq_length = 60  # Transformer needs 60, others need 1
+        elif self.model_type == 'PPO Ensemble':
+            # For PPO ensemble models, use the sequence length from config
+            seq_length = self.config['Config'].get('sequence_length', 60)
 
         # For ensemble models, skip the first 60 rows to allow history buffer to build up
-        start_index = 60 if self.model_type == 'Ensemble Model' else 0
+        start_index = 60 if self.model_type in ['Ensemble Model', 'PPO Ensemble'] else 0
         
         # Debug statistics
         price_diffs = []
@@ -507,6 +621,10 @@ class Backtester:
                         if self.model_type == 'Ensemble Model':
                             input_data = features_df.iloc[[i]].values
                             scaled_input = self.scaler.transform(input_data)
+                        elif self.model_type == 'PPO Ensemble':
+                            input_data = features_df.iloc[[i]].values
+                            # PPO ensemble handles its own scaling internally
+                            scaled_input = input_data
                         elif self.model_type == 'Time-Series Transformer':
                             input_data = features_df.iloc[i-seq_length:i].values
                             scaled_input = self.scaler.transform(input_data)
@@ -524,6 +642,16 @@ class Backtester:
                             except Exception as e:
                                 # Skip this prediction if not enough data
                                 prediction = 0.0
+                        elif self.model_type == 'PPO Ensemble':
+                            # For PPO ensemble, get action prediction
+                            try:
+                                ppo_response = self.ppo_ensemble_loader.predict(scaled_input)
+                                prediction_action = ppo_response.predicted_action
+                                # Convert action to prediction value for consistency
+                                prediction = prediction_action
+                            except Exception as e:
+                                # Skip this prediction if not enough data
+                                prediction = 0
                         elif self.model_type == 'XGBoostClassifier':
                             prediction = self.model.predict(scaled_input)
                         
@@ -543,6 +671,9 @@ class Backtester:
                                 prediction_action = 2
                             elif position == -1 and predicted_delta > (1 * tick_size):  # Short position, buy signal
                                 prediction_action = 1
+                        elif self.model_type == 'PPO Ensemble':
+                            # For PPO ensemble, prediction is already an action (0=Hold, 1=Buy, 2=Sell)
+                            prediction_action = int(prediction)
                         elif self.model_type == 'Time-Series Transformer':
                             pred_price_scaled = prediction.cpu().numpy().flatten()[0]
                             dummy_array = np.zeros((1, len(model_features)))
@@ -635,6 +766,10 @@ class Backtester:
                     if self.model_type == 'Ensemble Model':
                         input_data = features_df.iloc[[i]].values
                         scaled_input = self.scaler.transform(input_data)
+                    elif self.model_type == 'PPO Ensemble':
+                        input_data = features_df.iloc[[i]].values
+                        # PPO ensemble handles its own scaling internally
+                        scaled_input = input_data
                     elif self.model_type == 'Time-Series Transformer':
                         input_data = features_df.iloc[i-seq_length:i].values
                         scaled_input = self.scaler.transform(input_data)
@@ -655,6 +790,16 @@ class Backtester:
                         except Exception as e:
                             # Skip this prediction if not enough data
                             prediction = 0.0
+                    elif self.model_type == 'PPO Ensemble':
+                        # For PPO ensemble, get action prediction
+                        try:
+                            ppo_response = self.ppo_ensemble_loader.predict(scaled_input)
+                            prediction_action = ppo_response.predicted_action
+                            # Convert action to prediction value for consistency
+                            prediction = prediction_action
+                        except Exception as e:
+                            # Skip this prediction if not enough data
+                            prediction = 0
                     elif self.model_type == 'XGBoostClassifier':
                         prediction = self.model.predict(scaled_input)
                     
@@ -700,6 +845,14 @@ class Backtester:
                             buy_signals += 1
                         elif action == 0:  # Strong Sell
                             prediction_action = 2
+                            sell_signals += 1
+
+                    elif self.model_type == 'PPO Ensemble':
+                        # For PPO ensemble, prediction is already an action (0=Hold, 1=Buy, 2=Sell)
+                        prediction_action = int(prediction)
+                        if prediction_action == 1:  # Buy
+                            buy_signals += 1
+                        elif prediction_action == 2:  # Sell
                             sell_signals += 1
 
                     elif self.model_type == 'Neural Network (Regression)':

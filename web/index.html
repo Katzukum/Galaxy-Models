@@ -183,6 +183,11 @@
                                                 <label for="transformer-batch-size">Batch Size</label>
                                                 <input type="number" id="transformer-batch-size" value="32" min="8" max="128">
                                             </div>
+                                            <div class="param-group">
+                                                <label for="transformer-delta-features">Delta Features</label>
+                                                <input type="text" id="transformer-delta-features" value="close,volume" placeholder="close,volume,high,low">
+                                                <small>Comma-separated list of features to convert to deltas</small>
+                                            </div>
                                         </div>
                                     </div>
 
@@ -230,6 +235,16 @@
                                                 <label for="nn-epochs">Epochs</label>
                                                 <input type="number" id="nn-epochs" value="100" min="10" max="500">
                                             </div>
+                                            <div class="param-group">
+                                                <label for="nn-look-ahead">Look Ahead Period</label>
+                                                <input type="number" id="nn-look-ahead" value="5" min="1" max="20">
+                                                <small>Number of future periods to predict (target generation)</small>
+                                            </div>
+                                            <div class="param-group">
+                                                <label for="nn-tick-size">Tick Size</label>
+                                                <input type="number" id="nn-tick-size" value="0.25" min="0.01" max="1.0" step="0.01">
+                                                <small>Price tick size for target calculation</small>
+                                            </div>
                                         </div>
                                     </div>
 
@@ -275,6 +290,19 @@
                                                 <label for="xgb-strong-tick">Strong Tick Change</label>
                                                 <input type="number" id="xgb-strong-tick" value="40" min="20" max="200">
                                                 <div class="param-help">Threshold for strong buy/sell signals (must be > min tick change)</div>
+                                            </div>
+                                            <div class="param-group">
+                                                <label for="xgb-tick-size">Tick Size</label>
+                                                <input type="number" id="xgb-tick-size" value="0.25" min="0.01" max="1.0" step="0.01">
+                                                <small>Price tick size for target calculation</small>
+                                            </div>
+                                            <div class="param-group">
+                                                <label for="xgb-class-system">Classification System</label>
+                                                <select id="xgb-class-system">
+                                                    <option value="3">3-Class (Hold/Buy/Sell)</option>
+                                                    <option value="2">2-Class (Hold/Trade)</option>
+                                                </select>
+                                                <small>Number of classes for classification</small>
                                             </div>
                                         </div>
                                     </div>
@@ -452,6 +480,7 @@
                                     <option value="averaging">📊 Averaging Ensemble (Mean Prediction)</option>
                                     <option value="weighted">⚖️ Weighted Ensemble (Custom Weights)</option>
                                     <option value="stacking">🏗️ Stacking Ensemble (Meta-Learning)</option>
+                                    <option value="ppo">🤖 PPO Ensemble (Reinforcement Learning)</option>
                                 </select>
                                 <div class="form-help">
                                     <span class="help-text" data-ensemble="voting" style="display: none;">
@@ -465,6 +494,9 @@
                                     </span>
                                     <span class="help-text" data-ensemble="stacking" style="display: none;">
                                         Meta-learning approach using a second-level model to combine predictions
+                                    </span>
+                                    <span class="help-text" data-ensemble="ppo" style="display: none;">
+                                        Reinforcement learning approach that learns optimal trading strategies from individual model predictions
                                     </span>
                                 </div>
                             </div>
@@ -566,6 +598,52 @@
                                         <option value="elastic">Elastic Net</option>
                                         <option value="xgboost">XGBoost</option>
                                     </select>
+                                </div>
+
+                                <!-- PPO Configuration (for PPO ensemble) -->
+                                <div id="ppo-config" class="form-group" style="display: none;">
+                                    <h5>🤖 PPO Configuration</h5>
+                                    
+                                    <div class="form-row">
+                                        <div class="form-col">
+                                            <label for="ppo-learning-rate">Learning Rate</label>
+                                            <input type="range" id="ppo-learning-rate" min="0.0001" max="0.01" step="0.0001" value="0.0003">
+                                            <span class="range-value">0.0003</span>
+                                        </div>
+                                        <div class="form-col">
+                                            <label for="ppo-epochs">Epochs</label>
+                                            <input type="number" id="ppo-epochs" min="10" max="500" value="100">
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="form-row">
+                                        <div class="form-col">
+                                            <label for="ppo-sequence-length">Sequence Length</label>
+                                            <input type="number" id="ppo-sequence-length" min="30" max="120" value="60">
+                                        </div>
+                                        <div class="form-col">
+                                            <label for="ppo-gamma">Gamma (Discount Factor)</label>
+                                            <input type="range" id="ppo-gamma" min="0.9" max="0.99" step="0.01" value="0.99">
+                                            <span class="range-value">0.99</span>
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="form-row">
+                                        <div class="form-col">
+                                            <label for="ppo-initial-balance">Initial Balance</label>
+                                            <input type="number" id="ppo-initial-balance" min="1000" max="100000" value="50000">
+                                        </div>
+                                        <div class="form-col">
+                                            <label for="ppo-position-size">Position Size</label>
+                                            <input type="range" id="ppo-position-size" min="0.01" max="0.5" step="0.01" value="0.1">
+                                            <span class="range-value">0.1</span>
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="form-help">
+                                        <span>Configure PPO training parameters for reinforcement learning-based ensemble</span>
+                                    </div>
+                                </div>
                                     <div class="form-help">
                                         <span>Second-level model for stacking ensemble</span>
                                     </div>

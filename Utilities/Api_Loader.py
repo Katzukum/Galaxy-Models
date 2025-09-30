@@ -12,6 +12,7 @@ from NetworkConfigs.NN_loader import NNModelLoader, NNPredictionResponse
 from NetworkConfigs.Transformer_loader import TransformerModelLoader, TransformerPredictionResponse
 from NetworkConfigs.XGBoost_loader import XGBoostModelLoader, XGBoostPredictionResponse
 from NetworkConfigs.PPO_loader import PPOModelLoader, PPOPredictionResponse
+from NetworkConfigs.PPOEnsemble_loader import PPOEnsembleModelLoader, PPOEnsemblePredictionResponse
 
 
 
@@ -82,6 +83,11 @@ def get_model_loader(model_dir):
     model_type = config.find_key('Type', 'nn').lower()
     print(f"[DEBUG] Detected model type: {model_type}")
     
+    # Check for PPO ensemble model - look for both Type field and ensemble_type
+    config_dict = config.to_dict()
+    if model_type in ['ppo ensemble', 'ppo_ensemble'] or (model_type == 'nn' and 'Config' in config_dict and config_dict['Config'].get('ensemble_type') == 'ppo'):
+        model_type = 'ppo ensemble'
+    
     # Select the appropriate loader
     if model_type in ['nn', 'neural network', 'neural network (regression)']:
         print(f"[DEBUG] Creating NNModelLoader")
@@ -96,6 +102,9 @@ def get_model_loader(model_dir):
     elif model_type in ['ppo', 'ppo agent']:
         print(f"[DEBUG] Creating PPOModelLoader")
         return PPOModelLoader(model_dir=model_dir)
+    elif model_type in ['ppo ensemble', 'ppo_ensemble']:
+        print(f"[DEBUG] Creating PPOEnsembleModelLoader")
+        return PPOEnsembleModelLoader(model_dir=model_dir)
     else:
         # Default to NN loader
         print(f"[DEBUG] Unknown model type, defaulting to NNModelLoader")
@@ -190,7 +199,7 @@ async def get_model_info():
             detail=f"Error retrieving model information: {str(e)}"
         )
 
-@app.post("/predict", response_model=Union[NNPredictionResponse, TransformerPredictionResponse, XGBoostPredictionResponse, PPOPredictionResponse])
+@app.post("/predict", response_model=Union[NNPredictionResponse, TransformerPredictionResponse, XGBoostPredictionResponse, PPOPredictionResponse, PPOEnsemblePredictionResponse])
 async def get_prediction(request: PredictionRequest):
     """
     Accepts a dictionary of features and returns a model prediction.
@@ -218,6 +227,18 @@ async def get_prediction(request: PredictionRequest):
         elif isinstance(model_loader, PPOModelLoader):
             prediction_data = model_loader.predict(request.features)
             return model_loader.create_prediction_response(prediction_data)
+        elif isinstance(model_loader, PPOEnsembleModelLoader):
+            # Convert features dict to numpy array for PPO ensemble
+            import numpy as np
+            feature_values = []
+            for feature in model_loader.features:
+                if feature in request.features:
+                    feature_values.append(request.features[feature])
+                else:
+                    # Use 0.0 as default for missing features
+                    feature_values.append(0.0)
+            X = np.array(feature_values).reshape(1, -1)
+            return model_loader.predict(X)
         else:
             # Fallback for unknown model types
             raise HTTPException(status_code=500, detail="Unknown model type")

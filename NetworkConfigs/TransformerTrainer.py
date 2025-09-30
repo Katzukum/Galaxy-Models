@@ -5,6 +5,7 @@ import numpy as np
 import pandas as pd
 import torch
 import torch.nn as nn
+import math
 from torch.utils.data import TensorDataset, DataLoader
 from sklearn.preprocessing import MinMaxScaler, StandardScaler
 from sklearn.model_selection import train_test_split
@@ -12,7 +13,30 @@ from sklearn.metrics import mean_squared_error
 from typing import Dict, Any, List, Tuple
 
 # ####################################################################
-# --- 1. Custom Time-Series Transformer Model Definition ---
+# --- 1. Positional Encoding Module ---
+# ####################################################################
+class PositionalEncoding(nn.Module):
+    def __init__(self, d_model: int, dropout: float = 0.1, max_len: int = 5000):
+        super().__init__()
+        self.dropout = nn.Dropout(p=dropout)
+
+        position = torch.arange(max_len).unsqueeze(1)
+        div_term = torch.exp(torch.arange(0, d_model, 2) * (-math.log(10000.0) / d_model))
+        pe = torch.zeros(max_len, 1, d_model)
+        pe[:, 0, 0::2] = torch.sin(position * div_term)
+        pe[:, 0, 1::2] = torch.cos(position * div_term)
+        self.register_buffer('pe', pe.permute(1, 0, 2)) # Shape: [1, max_len, d_model]
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Args:
+            x: Tensor, shape [batch_size, seq_len, d_model]
+        """
+        x = x + self.pe[:, :x.size(1), :]
+        return self.dropout(x)
+
+# ####################################################################
+# --- 2. Custom Time-Series Transformer Model Definition ---
 # ####################################################################
 class TimeSeriesTransformer(nn.Module):
     """
@@ -27,7 +51,7 @@ class TimeSeriesTransformer(nn.Module):
         self.input_embedding = nn.Linear(input_dim, d_model)
         
         # Positional Encoding
-        self.pos_encoder = nn.Parameter(torch.zeros(1, 5000, d_model)) # Max sequence length 5000
+        self.pos_encoder = PositionalEncoding(d_model, dropout)
 
         # Transformer Encoder
         encoder_layer = nn.TransformerEncoderLayer(
@@ -46,8 +70,8 @@ class TimeSeriesTransformer(nn.Module):
         # src shape: [batch_size, seq_len, input_dim]
         
         # Embed input and add positional encoding
-        src = self.input_embedding(src) * np.sqrt(self.d_model)
-        src = src + self.pos_encoder[:, :src.size(1), :]
+        src = self.input_embedding(src) * math.sqrt(self.d_model)
+        src = self.pos_encoder(src)
         
         # Pass through transformer encoder
         # output shape: [batch_size, seq_len, d_model]
@@ -93,9 +117,10 @@ class TransformerTrainer:
         self.model.to(self.device)
         print(f"Model built and moved to device: {self.device}")
 
-        # --- Initialize Scaler ---
-        # Using StandardScaler for better robustness against out-of-distribution data
-        self.scaler = StandardScaler()
+        # --- Initialize Scalers ---
+        # Using separate scalers for features and target for better accuracy
+        self.feature_scaler = StandardScaler()
+        self.target_scaler = StandardScaler()
 
     def create_sequences(self, data: np.ndarray, seq_length: int) -> Tuple[np.ndarray, np.ndarray]:
         """Creates sequences and corresponding targets from time-series data."""
@@ -121,8 +146,16 @@ class TransformerTrainer:
         data_params = self.config.get('data_params', {})
         seq_length = data_params.get('sequence_length', 60)
 
-        print("Fitting scaler and transforming data...")
-        scaled_data = self.scaler.fit_transform(X_train)
+        print("Fitting scalers and transforming data...")
+        # Fit the target scaler on the first column (target) and transform it
+        scaled_y_train = self.target_scaler.fit_transform(X_train[:, [0]])
+
+        # Fit the feature scaler on all columns and transform them
+        scaled_X_train = self.feature_scaler.fit_transform(X_train)
+
+        # Replace the first column in the scaled features with the target-scaled values
+        scaled_data = scaled_X_train
+        scaled_data[:, 0] = scaled_y_train.flatten()
         
         print(f"Creating sequences with length: {seq_length}...")
         X_sequences, y_sequences = self.create_sequences(scaled_data, seq_length)
@@ -173,18 +206,23 @@ class TransformerTrainer:
         os.makedirs(self.output_path, exist_ok=True)
         print(f"Output directory '{self.output_path}' is ready.")
 
-        scaler_filename = f"{self.model_name}_scaler.pkl"
+        feature_scaler_filename = f"{self.model_name}_feature_scaler.pkl"
+        target_scaler_filename = f"{self.model_name}_target_scaler.pkl"
         model_filename = f"{self.model_name}_model.pt"
         config_filename = f"{self.model_name}_config.yaml"
 
-        scaler_path = os.path.join(self.output_path, scaler_filename)
+        feature_scaler_path = os.path.join(self.output_path, feature_scaler_filename)
+        target_scaler_path = os.path.join(self.output_path, target_scaler_filename)
         model_path = os.path.join(self.output_path, model_filename)
         config_path = os.path.join(self.output_path, config_filename)
 
-        # Save the scaler and model state_dict
-        with open(scaler_path, 'wb') as f:
-            pickle.dump(self.scaler, f)
-        print(f"Scaler has been saved to: '{scaler_path}'")
+        # Save the scalers and model state_dict
+        with open(feature_scaler_path, 'wb') as f:
+            pickle.dump(self.feature_scaler, f)
+        with open(target_scaler_path, 'wb') as f:
+            pickle.dump(self.target_scaler, f)
+        print(f"Feature scaler has been saved to: '{feature_scaler_path}'")
+        print(f"Target scaler has been saved to: '{target_scaler_path}'")
         
         torch.save(self.model.state_dict(), model_path)
         print(f"Model state_dict has been saved to: '{model_path}'")
@@ -194,7 +232,8 @@ class TransformerTrainer:
             'model_name': self.model_name,
             'Type': 'Time-Series Transformer',
             'artifact_paths': {
-                'scaler': scaler_filename,
+                'feature_scaler': feature_scaler_filename,
+                'target_scaler': target_scaler_filename,
                 'model_state_dict': model_filename
             },
             'Config': self.config.copy()
@@ -208,15 +247,15 @@ class TransformerTrainer:
 # ####################################################################
 # --- 3. Delta Data Preparation Function ---
 # ####################################################################
-def prepare_delta_data(data: np.ndarray, feature_names: List[str]) -> np.ndarray:
+def prepare_delta_data(data: np.ndarray, feature_names: List[str], delta_cols: List[str]) -> np.ndarray:
     """
     Converts raw price data into price changes (deltas) for relevant columns.
     The first row with NaNs is dropped.
     """
     df = pd.DataFrame(data, columns=feature_names)
     
-    # Calculate the difference for price-related features
-    for col in ['close', 'open', 'high', 'low']: # Adjust if your feature names differ
+    # Calculate the difference for specified features
+    for col in delta_cols:
         if col in df.columns:
             df[col] = df[col].diff()
     
@@ -235,7 +274,8 @@ def run_training_pipeline(model_name: str, output_dir: str, training_config: Dic
     """
     # --- 1. Convert data to deltas ---
     feature_names = training_config['data_params']['features']
-    delta_data = prepare_delta_data(data, feature_names)
+    delta_cols = training_config['data_params'].get('delta_feature_list', ['close', 'open', 'high', 'low']) # With fallback
+    delta_data = prepare_delta_data(data, feature_names, delta_cols) # Updated call
     
     # --- 2. Split delta data ---
     train_size = int(len(delta_data) * 0.80)
@@ -264,46 +304,51 @@ def run_training_pipeline(model_name: str, output_dir: str, training_config: Dic
 
     print(f"Loaded config for model: {loaded_config['model_name']} (Type: {loaded_config['Type']})")
 
-    # --- 4. Load scaler and model using the new nested structure ---
+    # --- 4. Load scalers and model using the new nested structure ---
     artifact_paths = loaded_config['artifact_paths']
     original_config = loaded_config['Config'] # Access the nested config
     
-    scaler_path = os.path.join(output_dir, artifact_paths['scaler'])
+    feature_scaler_path = os.path.join(output_dir, artifact_paths['feature_scaler'])
+    target_scaler_path = os.path.join(output_dir, artifact_paths['target_scaler'])
     model_path = os.path.join(output_dir, artifact_paths['model_state_dict'])
 
-    with open(scaler_path, 'rb') as f:
-        loaded_scaler = pickle.load(f)
+    with open(feature_scaler_path, 'rb') as f:
+        loaded_feature_scaler = pickle.load(f)
+    with open(target_scaler_path, 'rb') as f:
+        loaded_target_scaler = pickle.load(f)
 
     loaded_model = TimeSeriesTransformer(**original_config['model_params'])
     loaded_model.load_state_dict(torch.load(model_path))
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     loaded_model.to(device)
     loaded_model.eval()
-    print("\nScaler and Model loaded successfully.")
+    print("\nScalers and Model loaded successfully.")
 
     # --- 5. Make predictions and evaluate ---
     seq_length = original_config['data_params']['sequence_length']
     
-    # Scale test data using the *already fitted* scaler
-    scaled_test_data = loaded_scaler.transform(test_data)
-    X_test, y_test = trainer.create_sequences(scaled_test_data, seq_length)
-    
+    # Scale test data using the *already fitted* scalers
+    scaled_test_features = loaded_feature_scaler.transform(test_data)
+    X_test, y_test = trainer.create_sequences(scaled_test_features, seq_length)
+
     X_test_tensor = torch.FloatTensor(X_test).to(device)
 
     with torch.no_grad():
         predictions_scaled = loaded_model(X_test_tensor).cpu().numpy()
 
-    # Inverse transform predictions and actuals to get meaningful error
-    # Create a dummy array to inverse transform only the first column
-    dummy_pred = np.zeros((len(predictions_scaled), loaded_scaler.n_features_in_))
-    dummy_pred[:, 0] = predictions_scaled.flatten()
-    predictions_unscaled = loaded_scaler.inverse_transform(dummy_pred)[:, 0]
+    # Inverse transform predictions using the target scaler - no dummy array needed
+    predictions_unscaled = loaded_target_scaler.inverse_transform(predictions_scaled)
 
-    dummy_y = np.zeros((len(y_test), loaded_scaler.n_features_in_))
-    dummy_y[:, 0] = y_test.flatten()
-    y_test_unscaled = loaded_scaler.inverse_transform(dummy_y)[:, 0]
-    
-    rmse = np.sqrt(mean_squared_error(y_test_unscaled, predictions_unscaled))
+    # The y_test values were created from scaled data, but the original target was the first column.
+    # We need to inverse transform them correctly as well.
+    y_test_scaled_from_source = loaded_feature_scaler.transform(test_data)[:, 0]
+    _, y_test_original_scaled = trainer.create_sequences(test_data, seq_length) # Re-create to get unscaled y
+
+    # To get the correct unscaled y_test, we must use the target_scaler.
+    # The y_sequences are already the target values, so we just need to scale them for comparison.
+    y_test_unscaled = loaded_target_scaler.inverse_transform(y_test.reshape(-1, 1))
+
+    rmse = np.sqrt(mean_squared_error(y_test_unscaled.flatten(), predictions_unscaled.flatten()))
     print(f"\nRoot Mean Squared Error (RMSE) on test set (unscaled): {rmse:.4f}")
 
     # Verify output files
@@ -344,7 +389,8 @@ if __name__ == '__main__':
         },
         'data_params': {
             'sequence_length': 60, # Use 60 days of data to predict the next day
-            'features': feature_names
+            'features': feature_names,
+            'delta_feature_list': ['close', 'open', 'high', 'low'] # Features to convert to deltas
         },
         'train_params': {
             'learning_rate': 0.0005,

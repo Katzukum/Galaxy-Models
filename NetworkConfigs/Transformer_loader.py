@@ -19,7 +19,28 @@ class TransformerPredictionResponse(BaseModel):
     forecasted_value: float
     sequence_length: int
 
-# --- 1. Define the Core PyTorch Model Architecture ---
+# --- 1. Positional Encoding Module ---
+class PositionalEncoding(nn.Module):
+    def __init__(self, d_model: int, dropout: float = 0.1, max_len: int = 5000):
+        super().__init__()
+        self.dropout = nn.Dropout(p=dropout)
+
+        position = torch.arange(max_len).unsqueeze(1)
+        div_term = torch.exp(torch.arange(0, d_model, 2) * (-math.log(10000.0) / d_model))
+        pe = torch.zeros(max_len, 1, d_model)
+        pe[:, 0, 0::2] = torch.sin(position * div_term)
+        pe[:, 0, 1::2] = torch.cos(position * div_term)
+        self.register_buffer('pe', pe.permute(1, 0, 2)) # Shape: [1, max_len, d_model]
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Args:
+            x: Tensor, shape [batch_size, seq_len, d_model]
+        """
+        x = x + self.pe[:, :x.size(1), :]
+        return self.dropout(x)
+
+# --- 2. Define the Core PyTorch Model Architecture ---
 # This section defines the actual Transformer model. This code should be
 # identical to the model definition used during training to ensure the loaded
 # state dictionary keys match perfectly.
@@ -37,8 +58,8 @@ class TimeSeriesTransformer(nn.Module):
         # Input embedding layer to project input features to d_model
         self.input_embedding = nn.Linear(input_dim, d_model)
         
-        # Positional Encoding - using nn.Parameter to match training code
-        self.pos_encoder = nn.Parameter(torch.zeros(1, 5000, d_model)) # Max sequence length 5000
+        # Positional Encoding
+        self.pos_encoder = PositionalEncoding(d_model, dropout)
 
         # Transformer Encoder
         encoder_layer = nn.TransformerEncoderLayer(
@@ -57,8 +78,8 @@ class TimeSeriesTransformer(nn.Module):
         # src shape: [batch_size, seq_len, input_dim]
         
         # Embed input and add positional encoding
-        src = self.input_embedding(src)
-        src = src + self.pos_encoder[:, :src.size(1), :]
+        src = self.input_embedding(src) * math.sqrt(self.d_model)
+        src = self.pos_encoder(src)
         
         # Pass through transformer encoder
         # output shape: [batch_size, seq_len, d_model]
@@ -107,21 +128,26 @@ class TransformerModelLoader:
         
         self.features: List[str] = data_params['features']
         self.sequence_length: int = data_params['sequence_length']
+        self.delta_features: List[str] = data_params.get('delta_feature_list', ['close', 'open', 'high', 'low']) # With a fallback
         
         # --- Initialize the history buffer ---
         self.history = deque(maxlen=self.sequence_length)
         print(f"Initialized history buffer with sequence length: {self.sequence_length}")
 
         artifact_paths = self.config['artifact_paths']
-        scaler_path = os.path.join(model_dir, artifact_paths['scaler'])
+        feature_scaler_path = os.path.join(model_dir, artifact_paths['feature_scaler'])
+        target_scaler_path = os.path.join(model_dir, artifact_paths['target_scaler'])
         model_path = os.path.join(model_dir, artifact_paths['model_state_dict'])
 
         print(f"Loaded config for model '{self.model_name}'. Expecting {len(self.features)} features.")
 
-        # --- Load the Scaler ---
-        with open(scaler_path, 'rb') as f:
-            self.scaler = pickle.load(f)
-        print(f"Scaler loaded from: '{scaler_path}'")
+        # --- Load the Scalers ---
+        with open(feature_scaler_path, 'rb') as f:
+            self.feature_scaler = pickle.load(f)
+        with open(target_scaler_path, 'rb') as f:
+            self.target_scaler = pickle.load(f)
+        print(f"Feature scaler loaded from: '{feature_scaler_path}'")
+        print(f"Target scaler loaded from: '{target_scaler_path}'")
 
         # --- Build and Load the PyTorch Model ---
         # The model architecture is reconstructed using parameters from the config
@@ -150,12 +176,14 @@ class TransformerModelLoader:
         Returns:
             np.ndarray: Delta data with the same shape, first row will be NaN values
         """
-        # Calculate deltas for price-related features (same logic as in training)
+        # Calculate deltas for specified features (same logic as in training)
         delta_data = data.copy()
         
-        # Calculate differences for price columns (assuming first 4 columns are price features)
-        # This matches the logic in prepare_delta_data function from TransformerTrainer.py
-        for i in range(min(4, data.shape[1])):  # Process first 4 columns as price features
+        # Get the integer indices of the columns that need differencing
+        delta_indices = [self.features.index(col) for col in self.delta_features if col in self.features]
+
+        # Calculate differences for the identified columns
+        for i in delta_indices:
             delta_data[1:, i] = data[1:, i] - data[:-1, i]
         
         # The first row will contain NaN values after diff operation, but we keep it
@@ -203,8 +231,8 @@ class TransformerModelLoader:
         # The scaler was fitted on delta data during training
         delta_sequence = self._convert_to_deltas(input_sequence)
         
-        # Scale the delta sequence using the scaler fitted on delta data
-        scaled_sequence = self.scaler.transform(delta_sequence)
+        # Scale the delta sequence using the feature scaler fitted on delta data
+        scaled_sequence = self.feature_scaler.transform(delta_sequence)
         
         # Convert to a PyTorch tensor and add the batch dimension
         # Required shape: [batch_size, seq_len, n_features] for the training model
@@ -217,16 +245,10 @@ class TransformerModelLoader:
         scaled_prediction = scaled_prediction_tensor.item() # The raw model output, e.g., -0.8635
 
         # --- 5. INVERSE TRANSFORM THE PREDICTED DELTA ---
-        # The model now predicts a scaled price change (delta).
         scaled_predicted_delta = scaled_prediction_tensor.item()
 
-        # To inverse transform the delta, we place it in a dummy array
-        # where the first column corresponds to the 'close' feature delta.
-        dummy_array = np.zeros((1, self.scaler.n_features_in_))
-        dummy_array[0, 0] = scaled_predicted_delta
-
-        # This inverse_transform gives us the unscaled, real-world price change prediction.
-        unscaled_predicted_delta = self.scaler.inverse_transform(dummy_array)[0, 0]
+        # Inverse transform the delta using the dedicated target scaler
+        unscaled_predicted_delta = self.target_scaler.inverse_transform(np.array([[scaled_predicted_delta]]))[0, 0]
 
         # --- 6. CALCULATE THE FINAL PRICE FORECAST ---
         # Retrieve the last *actual* close price from the original, unscaled input.
