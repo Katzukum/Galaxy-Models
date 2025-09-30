@@ -183,6 +183,11 @@
                                                 <label for="transformer-batch-size">Batch Size</label>
                                                 <input type="number" id="transformer-batch-size" value="32" min="8" max="128">
                                             </div>
+                                            <div class="param-group">
+                                                <label for="transformer-delta-features">Delta Features</label>
+                                                <input type="text" id="transformer-delta-features" value="close,volume" placeholder="close,volume,high,low">
+                                                <small>Comma-separated list of features to convert to deltas</small>
+                                            </div>
                                         </div>
                                     </div>
 
@@ -230,6 +235,16 @@
                                                 <label for="nn-epochs">Epochs</label>
                                                 <input type="number" id="nn-epochs" value="100" min="10" max="500">
                                             </div>
+                                            <div class="param-group">
+                                                <label for="nn-look-ahead">Look Ahead Period</label>
+                                                <input type="number" id="nn-look-ahead" value="5" min="1" max="20">
+                                                <small>Number of future periods to predict (target generation)</small>
+                                            </div>
+                                            <div class="param-group">
+                                                <label for="nn-tick-size">Tick Size</label>
+                                                <input type="number" id="nn-tick-size" value="0.25" min="0.01" max="1.0" step="0.01">
+                                                <small>Price tick size for target calculation</small>
+                                            </div>
                                         </div>
                                     </div>
 
@@ -275,6 +290,19 @@
                                                 <label for="xgb-strong-tick">Strong Tick Change</label>
                                                 <input type="number" id="xgb-strong-tick" value="40" min="20" max="200">
                                                 <div class="param-help">Threshold for strong buy/sell signals (must be > min tick change)</div>
+                                            </div>
+                                            <div class="param-group">
+                                                <label for="xgb-tick-size">Tick Size</label>
+                                                <input type="number" id="xgb-tick-size" value="0.25" min="0.01" max="1.0" step="0.01">
+                                                <small>Price tick size for target calculation</small>
+                                            </div>
+                                            <div class="param-group">
+                                                <label for="xgb-class-system">Classification System</label>
+                                                <select id="xgb-class-system">
+                                                    <option value="3">3-Class (Hold/Buy/Sell)</option>
+                                                    <option value="2">2-Class (Hold/Trade)</option>
+                                                </select>
+                                                <small>Number of classes for classification</small>
                                             </div>
                                         </div>
                                     </div>

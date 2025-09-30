@@ -17,9 +17,9 @@ from NetworkConfigs.PPOEnsembleTrainer import run_ppo_ensemble_training
 eel.init('web')
 
 # Debug configuration
-DEBUG_TRAINING = False  # Set to True to open command windows for training subprocesses
+DEBUG_TRAINING = True  # Set to True to open command windows for training subprocesses
 DEBUG_API = False       # Set to True to open command windows for API subprocesses
-DEBUG_VERBOSE = False   # Set to True for additional debug output
+DEBUG_VERBOSE = True   # Set to True for additional debug output
 
 # Debug helper function
 def debug_print(message):
@@ -341,7 +341,7 @@ def start_training(model_type, csv_path, training_id=None, model_name=None, trai
             training_id = f"training_{int(time.time())}"
         
         # Validate model type
-        valid_models = ['transformer', 'nn', 'xgboost', 'ppo']
+        valid_models = ['transformer', 'nn', 'xgboost', 'ppo', 'ppo_ensemble', 'ensemble']
         if model_type not in valid_models:
             return {'error': f'Invalid model type. Must be one of: {valid_models}'}
         
@@ -399,6 +399,16 @@ def run_training_process(training_id, model_type, csv_path, model_name, training
         # Build command for run_training.py
         # Change to the project root directory to ensure proper imports
         project_root = os.path.dirname(os.path.abspath(__file__))
+        
+        # Handle special cases for ensemble models
+        if model_type in ['ppo_ensemble', 'ensemble']:
+            # For ensemble models, we need to call the appropriate function directly
+            # instead of using the command line interface
+            if model_type == 'ppo_ensemble':
+                return run_ppo_ensemble_training_direct(training_id, csv_path, model_name, training_params)
+            elif model_type == 'ensemble':
+                return run_ensemble_training_direct(training_id, csv_path, model_name, training_params)
+        
         cmd = [
             'python', os.path.join(project_root, 'Utilities', 'run_training.py'),
             '--csv_path', csv_path,
@@ -518,6 +528,108 @@ def run_training_process(training_id, model_type, csv_path, model_name, training
         if training_id in training_processes:
             del training_processes[training_id]
 
+def run_ppo_ensemble_training_direct(training_id, csv_path, model_name, training_params):
+    """Run PPO ensemble training directly without subprocess"""
+    try:
+        debug_print(f"Starting PPO ensemble training directly: {training_id}")
+        
+        # Update status
+        training_status[training_id]['status'] = 'running'
+        training_status[training_id]['message'] = 'Loading models and preparing data...'
+        training_status[training_id]['progress'] = 20
+        
+        # Prepare configuration
+        config = {
+            'model_name': model_name,
+            'ensemble_type': 'ppo',
+            'selected_models': training_params.get('selected_models', []),
+            'csv_path': csv_path,
+            'ppo_params': training_params.get('ppo_params', {}),
+            'trading_params': training_params.get('trading_params', {}),
+            'model_params': training_params.get('model_params', {}),
+            'features': training_params.get('features', [])
+        }
+        
+        # Call the actual PPO ensemble training function
+        result = run_ppo_ensemble_training(
+            model_name=model_name,
+            config=config,
+            output_path="Models"
+        )
+        
+        if result['success']:
+            debug_print(f"PPO ensemble training completed successfully: {training_id}")
+            training_status[training_id] = {
+                'status': 'completed',
+                'message': 'PPO ensemble training completed successfully!',
+                'progress': 100
+            }
+        else:
+            debug_print(f"PPO ensemble training failed: {training_id}")
+            training_status[training_id] = {
+                'status': 'failed',
+                'message': f'PPO ensemble training failed: {result.get("error", "Unknown error")}',
+                'progress': 0
+            }
+            
+    except Exception as e:
+        debug_print(f"PPO ensemble training error: {str(e)}")
+        training_status[training_id] = {
+            'status': 'failed',
+            'message': f'Error: {str(e)}',
+            'progress': 0
+        }
+
+def run_ensemble_training_direct(training_id, csv_path, model_name, training_params):
+    """Run ensemble training directly without subprocess"""
+    try:
+        debug_print(f"Starting ensemble training directly: {training_id}")
+        
+        # Update status
+        training_status[training_id]['status'] = 'running'
+        training_status[training_id]['message'] = 'Loading models and preparing data...'
+        training_status[training_id]['progress'] = 20
+        
+        # Extract parameters
+        ensemble_type = training_params.get('ensemble_type', 'averaging')
+        selected_models = training_params.get('selected_models', [])
+        weights = training_params.get('weights', {})
+        advanced_options = training_params.get('advanced_options', {})
+        
+        # Call the actual ensemble training function
+        result = run_ensemble_training(
+            ensemble_name=model_name,
+            ensemble_type=ensemble_type,
+            selected_models=selected_models,
+            csv_path=csv_path,
+            weights=weights,
+            advanced_options=advanced_options,
+            output_dir="Models"
+        )
+        
+        if result:
+            debug_print(f"Ensemble training completed successfully: {training_id}")
+            training_status[training_id] = {
+                'status': 'completed',
+                'message': 'Ensemble training completed successfully!',
+                'progress': 100
+            }
+        else:
+            debug_print(f"Ensemble training failed: {training_id}")
+            training_status[training_id] = {
+                'status': 'failed',
+                'message': 'Ensemble training failed',
+                'progress': 0
+            }
+            
+    except Exception as e:
+        debug_print(f"Ensemble training error: {str(e)}")
+        training_status[training_id] = {
+            'status': 'failed',
+            'message': f'Error: {str(e)}',
+            'progress': 0
+        }
+
 @eel.expose
 def get_training_status(training_id):
     """Get the current status of a training process"""
@@ -588,8 +700,8 @@ def get_available_models():
     try:
         models = []
         models_path = Path("Models")
-        print(f"[DEBUG] Models path: {models_path}")
-        print(f"[DEBUG] Models path exists: {models_path.exists()}")
+        debug_print(f"[DEBUG] Models path: {models_path}")
+        debug_print(f"[DEBUG] Models path exists: {models_path.exists()}")
         
         if not models_path.exists():
             print("[DEBUG] Models path does not exist, returning empty list")
@@ -597,14 +709,14 @@ def get_available_models():
         
         # Find all YAML files recursively in the Models folder
         yaml_files = find_yaml_files(str(models_path), recursive=True)
-        print(f"[DEBUG] Found {len(yaml_files)} YAML files: {yaml_files}")
+        debug_print(f"[DEBUG] Found {len(yaml_files)} YAML files: {yaml_files}")
         
         for i, yaml_file in enumerate(yaml_files):
-            print(f"[DEBUG] Processing YAML file {i+1}/{len(yaml_files)}: {yaml_file}")
+            debug_print(f"[DEBUG] Processing YAML file {i+1}/{len(yaml_files)}: {yaml_file}")
             try:
                 # Use centralized YAML utilities
                 config = load_yaml_config(yaml_file)
-                print(f"[DEBUG] Loaded config for {yaml_file}: {config.to_dict()}")
+                debug_print(f"[DEBUG] Loaded config for {yaml_file}: {config.to_dict()}")
                 
                 # Extract model information using recursive key finding
                 model_name = config.find_key('model_name', 'Unknown Model')
@@ -616,17 +728,17 @@ def get_available_models():
                     'type': model_type,
                     'config_path': config_path
                 }
-                print(f"[DEBUG] Created model info: {model_info}")
+                debug_print(f"[DEBUG] Created model info: {model_info}")
                 models.append(model_info)
             except Exception as e:
-                print(f"[DEBUG] Error reading {yaml_file}: {e}")
+                debug_print(f"[DEBUG] Error reading {yaml_file}: {e}")
                 continue
         
-        print(f"[DEBUG] Returning {len(models)} models: {models}")
+        debug_print(f"[DEBUG] Returning {len(models)} models: {models}")
         return models
         
     except Exception as e:
-        print(f"[DEBUG] Exception in get_available_models: {e}")
+        debug_print(f"[DEBUG] Exception in get_available_models: {e}")
         return {'error': f'Failed to get models: {str(e)}'}
 
 @eel.expose
@@ -735,12 +847,12 @@ api_logs = []
 def start_api_server(config):
     """Start the API server with the specified configuration"""
     print("[DEBUG] start_api_server() called")
-    print(f"[DEBUG] Received config: {config}")
+    debug_print(f"[DEBUG] Received config: {config}")
     
     global api_process, api_server_config, api_logs
     
     try:
-        print(f"[DEBUG] Current api_process: {api_process}")
+        debug_print(f"[DEBUG] Current api_process: {api_process}")
         if api_process is not None:
             print("[DEBUG] API server already running, returning error")
             return {'success': False, 'error': 'API server is already running'}
@@ -753,13 +865,13 @@ def start_api_server(config):
         # Store the configuration
         api_server_config = config
         api_logs.append(f"[{datetime.now().strftime('%H:%M:%S')}] Config: {config}")
-        print(f"[DEBUG] Stored config: {api_server_config}")
+        debug_print(f"[DEBUG] Stored config: {api_server_config}")
         
         # Get the model directory from the config path
         model_dir = os.path.dirname(config['model_path'])
         api_logs.append(f"[{datetime.now().strftime('%H:%M:%S')}] Model directory: {model_dir}")
-        print(f"[DEBUG] Extracted model directory: {model_dir}")
-        print(f"[DEBUG] Model directory exists: {os.path.exists(model_dir)}")
+        debug_print(f"[DEBUG] Extracted model directory: {model_dir}")
+        debug_print(f"[DEBUG] Model directory exists: {os.path.exists(model_dir)}")
         
         # Start the API server process using the existing Api_Loader.py
         cmd = [
@@ -771,16 +883,16 @@ def start_api_server(config):
         # Set MODEL_DIR environment variable to ensure it's available to the worker process
         env = os.environ.copy()
         env['MODEL_DIR'] = model_dir
-        print(f"[DEBUG] Constructed command: {cmd}")
+        debug_print(f"[DEBUG] Constructed command: {cmd}")
         
         # Get the project root directory
         project_root = os.path.dirname(os.path.abspath(__file__))
         api_logs.append(f"[{datetime.now().strftime('%H:%M:%S')}] Command: {' '.join(cmd)}")
         api_logs.append(f"[{datetime.now().strftime('%H:%M:%S')}] Working directory: {project_root}")
-        print(f"[DEBUG] Project root: {project_root}")
-        print(f"[DEBUG] Project root exists: {os.path.exists(project_root)}")
+        debug_print(f"[DEBUG] Project root: {project_root}")
+        debug_print(f"[DEBUG] Project root exists: {os.path.exists(project_root)}")
         
-        print(f"[DEBUG] Environment variables:")
+        debug_print(f"[DEBUG] Environment variables:")
         print(f"  - MODEL_DIR: {env['MODEL_DIR']}")
         print(f"  - Original MODEL_DIR: {os.environ.get('MODEL_DIR', 'Not set')}")
         

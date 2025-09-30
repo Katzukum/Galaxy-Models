@@ -25,13 +25,15 @@ class TradingEnvironment(gym.Env):
     Actions: 0=Hold, 1=Buy, 2=Sell
     """
     
-    def __init__(self, data, features, lookback_window=60, initial_balance=50000):
+    def __init__(self, data, features, lookback_window=60, initial_balance=50000, position_size=0.1, transaction_cost=0.001):
         super(TradingEnvironment, self).__init__()
         
         self.data = data
         self.features = features
         self.lookback_window = lookback_window
         self.initial_balance = initial_balance
+        self.position_size = position_size
+        self.transaction_cost = transaction_cost
         
         # Action space: 0=Hold, 1=Buy, 2=Sell
         self.action_space = spaces.Discrete(3)
@@ -110,9 +112,9 @@ class TradingEnvironment(gym.Env):
                 
                 # Open long position
                 self.position = 1
-                self.position_size = self.balance * 0.1 / current_price  # Use 10% of balance
+                self.position_size = self.balance * self.position_size / current_price  # Use configurable position size
                 self.entry_price = current_price
-                self.balance -= self.position_size * current_price
+                self.balance -= self.position_size * current_price * (1 + self.transaction_cost)
         
         elif action == 2:  # Sell
             if self.position >= 0:  # Not already short
@@ -124,9 +126,9 @@ class TradingEnvironment(gym.Env):
                 
                 # Open short position
                 self.position = -1
-                self.position_size = self.balance * 0.1 / current_price  # Use 10% of balance
+                self.position_size = self.balance * self.position_size / current_price  # Use configurable position size
                 self.entry_price = current_price
-                self.balance += self.position_size * current_price
+                self.balance += self.position_size * current_price * (1 - self.transaction_cost)
         
         # Calculate unrealized PnL
         if self.position != 0:
@@ -260,6 +262,12 @@ class PPOTrainer:
         # Get training parameters
         train_params = config.get('train_params', {})
         self.learning_rate = train_params.get('learning_rate', 3e-4)
+        
+        # Get trading parameters
+        trading_params = config.get('trading_params', {})
+        self.initial_balance = trading_params.get('initial_balance', 50000)
+        self.position_size = trading_params.get('position_size', 0.1)
+        self.transaction_cost = trading_params.get('transaction_cost', 0.001)
         self.epochs = train_params.get('epochs', 100)
         self.batch_size = train_params.get('batch_size', 64)
         self.ppo_epochs = train_params.get('ppo_epochs', 4)
@@ -290,7 +298,9 @@ class PPOTrainer:
             data=scaled_data,
             features=features,
             lookback_window=self.lookback_window,
-            initial_balance=50000
+            initial_balance=self.initial_balance,
+            position_size=self.position_size,
+            transaction_cost=self.transaction_cost
         )
         
         return env
