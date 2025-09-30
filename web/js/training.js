@@ -2,8 +2,9 @@
 console.log('DEBUG: Training.js loaded - checking for NN parameters...');
 setTimeout(() => {
     const lookAhead = document.getElementById('nn-look-ahead');
-    const tickSize = document.getElementById('nn-tick-size');
-    console.log('DEBUG: Initial check - Look Ahead:', lookAhead, 'Tick Size:', tickSize);
+    const atrColumn = document.getElementById('nn-atr-column');
+    const atrMultiplier = document.getElementById('nn-atr-multiplier');
+    console.log('DEBUG: Initial check - Look Ahead:', lookAhead, 'ATR Column:', atrColumn, 'ATR Multiplier:', atrMultiplier);
 }, 1000);
 
 class Training {
@@ -147,10 +148,12 @@ class Training {
             // DEBUG: Check if NN parameters exist
             if (modelType === 'nn') {
                 const lookAhead = document.getElementById('nn-look-ahead');
-                const tickSize = document.getElementById('nn-tick-size');
+                const atrColumn = document.getElementById('nn-atr-column');
+                const atrMultiplier = document.getElementById('nn-atr-multiplier');
                 console.log('DEBUG: NN parameters check:');
                 console.log('Look Ahead element:', lookAhead);
-                console.log('Tick Size element:', tickSize);
+                console.log('ATR Column element:', atrColumn);
+                console.log('ATR Multiplier element:', atrMultiplier);
                 console.log('NN params container:', targetParams);
                 console.log('NN params HTML:', targetParams.innerHTML);
             }
@@ -387,22 +390,24 @@ class Training {
                 epochs: parseInt(document.getElementById('nn-epochs').value)
             };
             const lookAheadElement = document.getElementById('nn-look-ahead');
-            const tickSizeElement = document.getElementById('nn-tick-size');
+            const atrColumnElement = document.getElementById('nn-atr-column');
+            const atrMultiplierElement = document.getElementById('nn-atr-multiplier');
             
-            if (!lookAheadElement || !tickSizeElement) {
+            if (!lookAheadElement || !atrColumnElement || !atrMultiplierElement) {
                 throw new Error('Neural Network parameter elements not found. Please refresh the page.');
             }
             
             params.data_params = {
                 look_ahead_period: parseInt(lookAheadElement.value),
-                tick_size: parseFloat(tickSizeElement.value)
+                atr_column_name: atrColumnElement.value,
+                atr_multiplier: parseFloat(atrMultiplierElement.value)
             };
         } else if (modelType === 'xgboost') {
             // Validate XGBoost elements exist
             const xgbElements = [
                 'xgb-objective', 'xgb-eval-metric', 'xgb-n-estimators', 
                 'xgb-learning-rate', 'xgb-max-depth', 'xgb-look-ahead',
-                'xgb-min-tick', 'xgb-strong-tick', 'xgb-tick-size', 'xgb-class-system'
+                'xgb-min-atr', 'xgb-strong-atr', 'xgb-atr-column', 'xgb-class-system'
             ];
             
             for (const elementId of xgbElements) {
@@ -421,9 +426,9 @@ class Training {
             };
             params.label_params = {
                 look_ahead_periods: document.getElementById('xgb-look-ahead').value.split(',').map(x => parseInt(x.trim())),
-                min_tick_change: parseInt(document.getElementById('xgb-min-tick').value),
-                strong_tick_change: parseInt(document.getElementById('xgb-strong-tick').value),
-                tick_size: parseFloat(document.getElementById('xgb-tick-size').value),
+                min_atr_multiplier: parseFloat(document.getElementById('xgb-min-atr').value),
+                strong_atr_multiplier: parseFloat(document.getElementById('xgb-strong-atr').value),
+                atr_column_name: document.getElementById('xgb-atr-column').value,
                 use_3_class: document.getElementById('xgb-class-system').value === '3'
             };
         } else if (modelType === 'ppo') {
@@ -529,7 +534,8 @@ class Training {
         document.getElementById('nn-learning-rate').value = 0.001;
         document.getElementById('nn-epochs').value = 100;
         document.getElementById('nn-look-ahead').value = 5;
-        document.getElementById('nn-tick-size').value = 0.25;
+        document.getElementById('nn-atr-column').value = 'atr1_value';
+        document.getElementById('nn-atr-multiplier').value = 1.0;
 
         // Reset XGBoost parameters
         document.getElementById('xgb-objective').value = 'multi:softmax';
@@ -538,9 +544,9 @@ class Training {
         document.getElementById('xgb-learning-rate').value = 0.1;
         document.getElementById('xgb-max-depth').value = 4;
         document.getElementById('xgb-look-ahead').value = '3,5';
-        document.getElementById('xgb-min-tick').value = 20;
-        document.getElementById('xgb-strong-tick').value = 40;
-        document.getElementById('xgb-tick-size').value = 0.25;
+        document.getElementById('xgb-min-atr').value = 0.5;
+        document.getElementById('xgb-strong-atr').value = 1.0;
+        document.getElementById('xgb-atr-column').value = 'atr1_value';
         document.getElementById('xgb-class-system').value = '3';
 
         // Reset PPO parameters
